@@ -699,6 +699,21 @@
     syncMusicUI();
   }
 
+  // Arranca la música justo al presionar "ENTRAR" (gesto del usuario),
+  // que es el momento correcto para que Chrome/Safari permitan el autoplay
+  // con sonido. Si por lo que sea el navegador la bloquea igual, no rompe
+  // nada: el mini-player queda visible y listo para tocar play a mano.
+  function startBackgroundMusic() {
+    const audio = getAudioEl();
+    if (!audio || !musicPlaylist.length) return;
+
+    if (!audio.src) {
+      loadTrack(currentTrackIndex, true);
+    } else if (audio.paused) {
+      audio.play().catch(syncMusicUI);
+    }
+  }
+
   function playPauseToggle() {
     const audio = getAudioEl();
     if (!audio || !musicPlaylist.length) return;
@@ -956,7 +971,12 @@
     createParticles(prefersReducedMotion ? 0 : 12);
 
     const enterBtn = document.getElementById('enterBtn');
-    if (enterBtn) enterBtn.addEventListener('click', goToThreshold);
+    if (enterBtn) {
+      enterBtn.addEventListener('click', () => {
+        startBackgroundMusic();
+        goToThreshold();
+      });
+    }
 
     const backToWorldBtn = document.getElementById('backToWorldBtn');
     if (backToWorldBtn) backToWorldBtn.addEventListener('click', exitZone);
