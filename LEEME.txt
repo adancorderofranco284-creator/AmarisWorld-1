@@ -1,0 +1,47 @@
+AMARIS WORLD — regalo interactivo de cumpleaños
+=================================================
+
+Cómo personalizarlo (no necesitas tocar HTML/CSS/JS):
+
+1. Abre data/content.js
+   - "nombre": el nombre que aparece en la escena final ⭐
+   - "carta": título, texto y firma de la carta 💌
+   - "regalo.mensaje": el mensaje que aparece al abrir la caja 🎁
+   - "sorpresa.mensaje": la frase final debajo del nombre
+
+2. Fotos (📸 Recuerdos)
+   - Agrégalas en assets/recuerdos/ con los nombres 1.jpg, 2.jpg, 3.jpg...
+   - No hay límite de cantidad: actualmente hay 122 fotos cargadas (1-122).
+   - Si agregas fotos nuevas siguiendo la numeración (123.jpg, 124.jpg...),
+     la galería las detecta y muestra solas, sin que tengas que editar
+     data/content.js.
+   - Acepta .jpg/.JPG, .jpeg/.JPEG, .png/.PNG, .webp/.WEBP.
+   - Edita los "caption" en data/content.js si quieres un pie de foto distinto.
+   - Las fotos que no existan simplemente no se muestran (no rompe nada).
+
+3. Música (🎵)
+   - Ya viene cargada una playlist completa en assets/music/.
+   - El reproductor es persistente: aparece como una barra abajo en
+     CUALQUIER pantalla (mundo, cartas, recuerdos, etc.) y la música
+     sigue sonando aunque cambies de sección.
+   - Al terminar una canción, pasa sola a la siguiente de la lista.
+   - Para elegir una canción específica de la lista, entra al apartado
+     "Música" del mundo: ahí se ve la lista completa y tocas la que
+     quieras.
+   - Para agregar/quitar/renombrar canciones, edita el arreglo
+     "playlist" dentro de "musica" en data/content.js (cada canción
+     tiene "titulo" y "src", la ruta del archivo en assets/music/).
+   - Si la lista queda vacía, esa zona muestra un aviso amigable en
+     vez de fallar.
+
+4. Para ver el proyecto: abre index.html en el navegador
+   (recomendado: usar un servidor local, ej. "npx serve" o la extensión
+   Live Server, para que las fotos/música carguen sin problemas de rutas).
+
+Estructura:
+  index.html      → pantallas y estructura
+  style.css       → toda la apariencia (pixel art, animaciones)
+  script.js       → toda la lógica e interacción
+  data/zones.js   → los 5 puntos del lobby (posición, ícono, nombre)
+  data/content.js → todos los textos editables
+  assets/         → imagen de fondo, fotos y música

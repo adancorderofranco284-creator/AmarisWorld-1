@@ -1,0 +1,5 @@
+Coloca aquí la canción con el nombre song.mp3 (o song.ogg).
+El reproductor de la zona "Música" la detectará automáticamente.
+
+Si no agregas ningún archivo, esa zona mostrará un aviso amigable
+en vez de romperse.

@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Amaris World</title>
+  <meta name="description" content="Amaris World — un pequeño regalo interactivo de cumpleaños." />
+  <meta name="theme-color" content="#0a0b16" />
+
+  <!-- Tipografías: Cormorant Garamond (título, serif elegante) + Jost (texto, ligera) + Press Start 2P (pixel) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=Jost:wght@300;400;500&family=Press+Start+2P&display=swap"
+    rel="stylesheet"
+  />
+
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- Capa de fondo: cielo + estrellas + partículas (generadas por JS, puramente decorativas) -->
+  <div class="sky" aria-hidden="true">
+    <div class="stars-layer" id="starsLayer"></div>
+    <div class="particles-layer" id="particlesLayer"></div>
+  </div>
+
+  <main class="app">
+
+    <!-- ESTADO 1: Pantalla de inicio -->
+    <section class="screen screen--lobby" id="lobbyScreen" aria-hidden="false">
+      <div class="orb" id="orb" aria-hidden="true"></div>
+
+      <div class="lobby-content">
+        <p class="eyebrow" data-anim="1">bienvenida a</p>
+        <h1 class="title" data-anim="2">Amaris World</h1>
+        <p class="subtitle" data-anim="3">Hay una pequeña sorpresa esperándote&hellip;</p>
+
+        <button class="enter-btn" id="enterBtn" data-anim="4" type="button">
+          <span>ENTRAR</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- ESTADO 2: Umbral — transición animada hacia el lobby -->
+    <section class="screen screen--threshold" id="thresholdScreen" aria-hidden="true">
+      <div class="threshold-content">
+        <p class="threshold-text">Tu mundo está despertando</p>
+        <span class="dots" aria-hidden="true">
+          <span></span><span></span><span></span>
+        </span>
+      </div>
+    </section>
+
+    <!-- ESTADO 3: Lobby — mundo pixel-art con los 5 puntos interactivos -->
+    <section class="screen screen--world" id="worldScreen" aria-hidden="true">
+      <div class="world-ambient" aria-hidden="true"></div>
+
+      <div class="pixel-scene" id="pixelScene" aria-hidden="true">
+        <div class="world-bg-image"></div>
+        <div class="world-bg-overlay"></div>
+        <div class="sky-twinkle-layer" id="skyTwinkleLayer"></div>
+        <div class="fireflies-layer" id="firefliesLayer"></div>
+      </div>
+
+      <p class="world-heading" data-anim="1">Presiona el que sea de tu gusto</p>
+
+      <div class="world-stage" id="worldStage">
+        <!-- Puntos inyectados por renderWorld() a partir de data/zones.js -->
+      </div>
+    </section>
+
+    <!-- ESTADO 4: Zona — contenido de cada punto (carta / recuerdos / regalo / música) -->
+    <section class="screen screen--zone" id="zoneScreen" aria-hidden="true">
+      <div class="zone-content">
+        <button class="back-btn" id="backToWorldBtn" type="button">
+          <span>← VOLVER AL MUNDO</span>
+        </button>
+        <div class="zone-body" id="zoneBody">
+          <!-- Contenido poblado por populateZoneContent() según el tipo de zona -->
+        </div>
+      </div>
+    </section>
+
+    <!-- ESTADO 5: Sorpresa final — escena cinematográfica de cierre -->
+    <section class="screen screen--surprise" id="surpriseScreen" aria-hidden="true">
+      <div class="surprise-stars" id="surpriseStars" aria-hidden="true"></div>
+      <div class="surprise-content">
+        <p class="surprise-line surprise-line--1" data-anim="1">✨ FELIZ CUMPLEAÑOS ✨</p>
+        <h2 class="surprise-name" id="surpriseName" data-anim="2"></h2>
+        <p class="surprise-message" id="surpriseMessage" data-anim="3"></p>
+        <button class="back-btn surprise-back" id="backFromSurpriseBtn" data-anim="4" type="button">
+          <span>← VOLVER AL MUNDO</span>
+        </button>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Audio de la canción, controlado desde la zona "Música" (data/content.js) -->
+  <audio id="bgAudio" preload="none"></audio>
+
+  <!-- Barra de música persistente: flota abajo sobre cualquier pantalla,
+       para que la canción siga sonando sin importar dónde esté el usuario. -->
+  <div class="mini-player" id="miniPlayer" aria-hidden="true">
+    <div class="mini-player-info">
+      <span class="mini-player-icon" aria-hidden="true">🎵</span>
+      <span class="mini-player-track" id="miniPlayerTrack">—</span>
+    </div>
+    <div class="mini-player-controls">
+      <button class="mini-btn" id="miniPrevBtn" type="button" aria-label="Canción anterior">⏮</button>
+      <button class="mini-btn mini-btn--play" id="miniPlayBtn" type="button" aria-label="Reproducir">▶</button>
+      <button class="mini-btn" id="miniNextBtn" type="button" aria-label="Siguiente canción">⏭</button>
+    </div>
+  </div>
+
+  <script src="data/zones.js"></script>
+  <script src="data/content.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
