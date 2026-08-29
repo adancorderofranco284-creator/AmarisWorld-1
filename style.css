@@ -1184,6 +1184,21 @@ button {
   --font-pixel: 'Press Start 2P', var(--font-display);
 
   --world-bg-url: url('assets/world-bg.png');
+  --world-bg-mobile-url: url('assets/world-bg1.png');
+}
+
+/* Fondo responsive: en celulares (pantalla angosta + orientación vertical)
+   se usa world-bg1, la imagen vertical pensada para esa proporción.
+   Solo se sobreescribe la variable --world-bg-url; .world-bg-image ya la
+   consume (línea con "background-image: var(--world-bg-url)"), así que
+   el cambio de imagen ocurre solo con esto, sin duplicar reglas ni tocar
+   background-size/position/repeat (que siguen definidos una sola vez,
+   más abajo, en .world-bg-image). En landscape o pantallas ≥601px se
+   mantiene world-bg (horizontal), incluidas tablets. */
+@media screen and (max-width: 600px) and (orientation: portrait) {
+  :root {
+    --world-bg-url: var(--world-bg-mobile-url);
+  }
 }
 
 /* -------------------------------------------------------------------- */
