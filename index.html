@@ -57,7 +57,19 @@
       <div class="world-ambient" aria-hidden="true"></div>
 
       <div class="pixel-scene" id="pixelScene" aria-hidden="true">
-        <div class="world-bg-image"></div>
+        <!-- Fondo real del mundo: son VIDEOS, no imágenes estáticas.
+             Se prueban 3 formatos comunes; el navegador usa el primero
+             que exista y descarta el resto sin romper nada. -->
+        <video class="world-bg-video world-bg-video--desktop" autoplay loop muted playsinline preload="auto" aria-hidden="true">
+          <source src="assets/world-bg.mp4" type="video/mp4" />
+          <source src="assets/world-bg.webm" type="video/webm" />
+          <source src="assets/world-bg.mov" type="video/quicktime" />
+        </video>
+        <video class="world-bg-video world-bg-video--mobile" autoplay loop muted playsinline preload="auto" aria-hidden="true">
+          <source src="assets/world-bg1.mp4" type="video/mp4" />
+          <source src="assets/world-bg1.webm" type="video/webm" />
+          <source src="assets/world-bg1.mov" type="video/quicktime" />
+        </video>
         <div class="world-bg-overlay"></div>
         <div class="sky-twinkle-layer" id="skyTwinkleLayer"></div>
         <div class="fireflies-layer" id="firefliesLayer"></div>
@@ -117,5 +129,8 @@
   <script src="data/zones.js"></script>
   <script src="data/content.js"></script>
   <script src="script.js"></script>
+  <!-- Capa de vida sutil sobre el fondo (agua/luces/vegetación). No toca
+       personajes, interfaz ni script.js — es completamente independiente. -->
+  <script src="bg-life.js"></script>
 </body>
 </html>

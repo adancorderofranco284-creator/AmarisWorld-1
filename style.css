@@ -1165,12 +1165,12 @@ button {
    anterior a este bloque; solo añade capas decorativas encima de
    .world-ambient y reestiliza .zone-glyph (marcador de zona).
 
-   El fondo es una imagen estática (assets/img/world-bg.png) — esta capa
-   solo le da "vida": respiración/zoom lento, viñeta cálida pulsante,
-   destellos extra en el cielo y luciérnagas cálidas flotando.
+   El fondo son VIDEOS en loop (assets/world-bg.* y assets/world-bg1.*)
+   — esta capa les da un "respiro" extra (zoom lento), viñeta cálida
+   pulsante, destellos extra en el cielo y luciérnagas cálidas flotando.
 
-   Nota: esa imagen incluye personajes con copyright de terceros —
-   úsala solo en un proyecto personal/privado, no en algo publicado
+   Nota: ese material incluye personajes con copyright de terceros —
+   úsalo solo en un proyecto personal/privado, no en algo publicado
    abiertamente.
    ========================================================================== */
 
@@ -1182,23 +1182,6 @@ button {
   --pixel-window-glow: rgba(255, 217, 138, 0.75);
 
   --font-pixel: 'Press Start 2P', var(--font-display);
-
-  --world-bg-url: url('assets/world-bg.png');
-  --world-bg-mobile-url: url('assets/world-bg1.png');
-}
-
-/* Fondo responsive: en celulares (pantalla angosta + orientación vertical)
-   se usa world-bg1, la imagen vertical pensada para esa proporción.
-   Solo se sobreescribe la variable --world-bg-url; .world-bg-image ya la
-   consume (línea con "background-image: var(--world-bg-url)"), así que
-   el cambio de imagen ocurre solo con esto, sin duplicar reglas ni tocar
-   background-size/position/repeat (que siguen definidos una sola vez,
-   más abajo, en .world-bg-image). En landscape o pantallas ≥601px se
-   mantiene world-bg (horizontal), incluidas tablets. */
-@media screen and (max-width: 600px) and (orientation: portrait) {
-  :root {
-    --world-bg-url: var(--world-bg-mobile-url);
-  }
 }
 
 /* -------------------------------------------------------------------- */
@@ -1217,22 +1200,31 @@ button {
   z-index: 2; /* por encima de .pixel-scene */
 }
 
-/* Imagen de fondo con un "respiro" muy lento (zoom/parallax sutil) para
-   que la escena estática se sienta viva sin distraer del contenido. */
-.world-bg-image {
+/* Video de fondo, cámara completamente fija: sin zoom ni respiro extra.
+   El propio video ya trae su movimiento; el inset -2% / 104% es solo
+   un pequeño colchón para que object-fit: cover no deje bordes visibles
+   si el video no calza exacto con el contenedor. */
+.world-bg-video {
   position: absolute;
   inset: -2%;
-  background-image: var(--world-bg-url);
-  background-size: cover;
-  background-position: center bottom;
-  transform: scale(1.04);
-  animation: bgBreathe 22s ease-in-out infinite;
-  will-change: transform;
+  width: 104%;
+  height: 104%;
+  object-fit: cover;
+  object-position: center bottom;
+  pointer-events: none;
 }
 
-@keyframes bgBreathe {
-  0%, 100% { transform: scale(1.04) translate(0%, 0%); }
-  50%      { transform: scale(1.09) translate(-0.6%, -0.8%); }
+/* Por defecto se muestra el video horizontal (desktop/tablet/landscape)
+   y se oculta el vertical. En celulares en modo retrato se invierte
+   (ver media query más abajo). Mantener ambos en el DOM evita parpadeos
+   al rotar la pantalla; el oculto simplemente no se pinta. */
+.world-bg-video--mobile {
+  display: none;
+}
+
+@media screen and (max-width: 600px) and (orientation: portrait) {
+  .world-bg-video--desktop { display: none; }
+  .world-bg-video--mobile  { display: block; }
 }
 
 /* Viñeta cálida que respira suavemente, para reforzar el foco central
@@ -1299,7 +1291,6 @@ button {
 /* -------------------------------------------------------------------- */
 
 @media (prefers-reduced-motion: reduce) {
-  .world-bg-image,
   .world-bg-overlay,
   .sky-twinkle,
   .pixel-firefly,
@@ -1307,7 +1298,6 @@ button {
   .zone-arrow {
     animation: none !important;
   }
-  .world-bg-image { transform: scale(1); }
 }
 
 /* ==========================================================================
@@ -1383,4 +1373,138 @@ button {
 
 @media (prefers-reduced-motion: reduce) {
   .surprise-star { animation: none !important; }
+}
+
+/* ==========================================================================
+   AMARIS WORLD — FASE 5: FONDO VIVO (agua · luces · vegetación)
+   Capa puramente decorativa generada por bg-life.js sobre la imagen real
+   de fondo (assets/world-bg.png). No modifica ninguna regla anterior a
+   este bloque, no reemplaza la imagen, no mueve la cámara ni el encuadre.
+   Todo va detrás de .world-stage (z-index 2) y con pointer-events: none.
+   ========================================================================== */
+
+:root {
+  /* Perilla global de intensidad: 0 = apagado, 1 = normal, 1.5 = más notorio.
+     Cámbiala desde la consola: document.documentElement.style.setProperty('--bg-life-intensity', '0.5') */
+  --bg-life-intensity: 1;
+}
+
+.life-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 1; /* mismo nivel que el resto de .pixel-scene, debajo de .world-stage */
+  pointer-events: none;
+  overflow: hidden;
+}
+
+/* -------------------------------------------------------------------- */
+/* Agua — barrido de brillo muy sutil, como un reflejo ligeramente vivo   */
+/* -------------------------------------------------------------------- */
+
+.water-shimmer {
+  position: absolute;
+  top: var(--wy, 70%);
+  left: var(--wx, 50%);
+  width: var(--ww, 40%);
+  height: var(--wh, 10%);
+  transform: translate(-50%, -50%);
+  background: linear-gradient(
+    100deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.05) 45%,
+    rgba(255, 230, 190, 0.16) 50%,
+    rgba(255, 255, 255, 0.05) 55%,
+    transparent 100%
+  );
+  background-size: 260% 100%;
+  mix-blend-mode: screen;
+  filter: blur(2px);
+  opacity: calc(var(--wop, 0.55) * var(--bg-life-intensity));
+  animation: waterSweep var(--wdur, 9s) ease-in-out infinite;
+  animation-delay: var(--wdelay, 0s);
+  will-change: background-position;
+}
+
+@keyframes waterSweep {
+  0%   { background-position: 130% 0; }
+  50%  { background-position: -30% 0; }
+  100% { background-position: 130% 0; }
+}
+
+/* -------------------------------------------------------------------- */
+/* Luces — pequeña variación de intensidad, tipo vela/farol/ventana      */
+/* -------------------------------------------------------------------- */
+
+.light-flicker {
+  position: absolute;
+  top: var(--ly, 50%);
+  left: var(--lx, 50%);
+  width: var(--lsize, 10px);
+  height: var(--lsize, 10px);
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--lcolor, #ffe6a8) 0%, transparent 70%);
+  animation: lightFlicker var(--ldur, 3.5s) ease-in-out infinite;
+  animation-delay: var(--ldelay, 0s);
+  will-change: opacity, transform;
+}
+
+@keyframes lightFlicker {
+  0%, 100% { opacity: calc(var(--lop, 0.8) * var(--bg-life-intensity)); transform: translate(-50%, -50%) scale(1);    }
+  45%      { opacity: calc(var(--lop, 0.8) * var(--bg-life-intensity) * 0.7); transform: translate(-50%, -50%) scale(0.94); }
+  60%      { opacity: calc(var(--lop, 0.8) * var(--bg-life-intensity)); transform: translate(-50%, -50%) scale(1.05); }
+  80%      { opacity: calc(var(--lop, 0.8) * var(--bg-life-intensity) * 0.85); transform: translate(-50%, -50%) scale(0.98); }
+}
+
+/* -------------------------------------------------------------------- */
+/* Vegetación — luz moteada tenue simulando brisa entre hojas.           */
+/* No mueve ni deforma la imagen: solo un resplandor suave que aparece   */
+/* y desaparece, como luz filtrándose entre hojas que se mecen.          */
+/* -------------------------------------------------------------------- */
+
+.foliage-breeze {
+  position: absolute;
+  top: var(--fy, 50%);
+  left: var(--fx, 50%);
+  width: var(--fsize, 70px);
+  height: var(--fsize, 70px);
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 245, 210, 0.14) 0%, transparent 70%);
+  filter: blur(6px);
+  animation: foliageDapple var(--fdur, 6s) ease-in-out infinite;
+  animation-delay: var(--fdelay, 0s);
+  will-change: opacity, transform;
+}
+
+@keyframes foliageDapple {
+  0%, 100% { opacity: calc(0.12 * var(--bg-life-intensity)); transform: translate(-50%, -50%) scale(0.9);  }
+  50%      { opacity: calc(0.34 * var(--bg-life-intensity)); transform: translate(-52%, -49%) scale(1.06); }
+}
+
+/* -------------------------------------------------------------------- */
+/* Interruptor rápido: agrega la clase "bg-life-off" al <body> (o llama  */
+/* a window.toggleBgLife(false) desde bg-life.js) para apagar todo.      */
+/* -------------------------------------------------------------------- */
+
+body.bg-life-off .life-layer {
+  display: none;
+}
+
+/* Modo de calibración: dibuja los límites de cada hotspot para que sea
+   fácil ajustar sus posiciones/tamaños en bg-life.js sobre tu imagen real. */
+.life-layer.is-debug .water-shimmer,
+.life-layer.is-debug .light-flicker,
+.life-layer.is-debug .foliage-breeze {
+  outline: 1px dashed rgba(255, 255, 255, 0.6);
+  animation-play-state: paused;
+  opacity: 0.9 !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .water-shimmer,
+  .light-flicker,
+  .foliage-breeze {
+    animation: none !important;
+  }
 }
