@@ -1233,7 +1233,7 @@ button {
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(ellipse 55% 40% at 63% 82%, rgba(255, 200, 130, 0.16) 0%, transparent 70%),
+    radial-gradient(ellipse 55% 40% at 47% 83%, rgba(255, 200, 130, 0.16) 0%, transparent 70%),
     radial-gradient(ellipse 130% 100% at 50% 45%, transparent 55%, rgba(4, 3, 10, 0.5) 100%);
   animation: overlayPulse 6s ease-in-out infinite;
 }

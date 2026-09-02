@@ -36,23 +36,24 @@
 
   var BG_LIFE_CONFIG = {
     // Luces: velas, faroles, ventanas encendidas. "x"/"y" en % de la escena.
+    // Calibrado sobre tu arte real: el farol junto a la niña y la
+    // ventanita de la cabaña al fondo.
     lights: [
-      // Coincide con el farol ya insinuado en el CSS existente (63%, 82%).
-      { x: 63, y: 82, size: 12, color: "#ffe6a8", duration: 3.2, delay: 0,   opacity: 0.85 },
-      { x: 22, y: 34, size: 7,  color: "#ffe6a8", duration: 4.1, delay: 1.1, opacity: 0.6  },
-      { x: 78, y: 30, size: 7,  color: "#f2cf94", duration: 3.7, delay: 0.5, opacity: 0.55 }
+      { x: 47, y: 83, size: 14, color: "#ffe6a8", duration: 3.2, delay: 0,   opacity: 0.85 }, // farol principal
+      { x: 49, y: 44, size: 5,  color: "#ffd98a", duration: 4.5, delay: 1.2, opacity: 0.5  }  // ventana de la cabaña
     ],
 
-    // Agua: banda de reflejo/brillo que se desliza muy despacio.
-    // Déjalo en [] si tu imagen no tiene lago/agua.
-    water: [
-      { x: 50, y: 78, width: 46, height: 9, duration: 10, delay: 0, opacity: 0.5 }
-    ],
+    // Agua: en tu escena no hay lago/agua visible, así que queda vacío.
+    // Si más adelante agregas una versión con agua, solo agrega objetos
+    // aquí con la misma forma que antes (x, y, width, height, duration...).
+    water: [],
 
-    // Vegetación: destello suave tipo luz-entre-hojas (no mueve la imagen).
+    // Vegetación: destello suave tipo luz-entre-hojas, puesto sobre los
+    // tres árboles reales de la escena (izquierda, centro, derecha con el búho).
     foliage: [
-      { x: 10, y: 55, size: 90, duration: 6.5, delay: 0.3 },
-      { x: 90, y: 50, size: 80, duration: 7.2, delay: 1.4 }
+      { x: 11, y: 30, size: 100, duration: 6.5, delay: 0.2 }, // árbol grande, izquierda
+      { x: 88, y: 44, size: 110, duration: 7.5, delay: 1.0 }, // árbol grande derecha, junto al búho
+      { x: 60, y: 64, size: 70,  duration: 6.0, delay: 0.6 }  // árbol mediano central
     ]
   };
 
