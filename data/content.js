@@ -182,9 +182,16 @@ window.AMARIS_CONTENT = {
   },
 
   // ---- 🎵 MÚSICA -----------------------------------------------------------
-  // Agrega o quita canciones editando esta lista. Cada canción va en
-  // assets/music/ y necesita un "src" (la ruta al archivo) y un "titulo"
-  // (lo que se muestra en la barra de reproducción y en la lista).
+  // YA NO EDITES ESTA LISTA A MANO para agregar/quitar canciones.
+  // La playlist real ahora se lee de assets/music/manifest.json, que se
+  // genera automáticamente a partir de los archivos que de verdad estén en
+  // assets/music/ (usa generate-manifest.html: eliges la carpeta, descargas
+  // el manifest.json y lo reemplazas — sin límite de cantidad y sin escribir
+  // nombres a mano). Ver el comentario en script.js, sección "🎵 MÚSICA".
+  //
+  // El arreglo "playlist" de aquí abajo queda solo como respaldo de
+  // emergencia, por si manifest.json no existe todavía o falla al cargar,
+  // para que el reproductor nunca quede completamente roto.
   musica: {
     titulo: 'Nuestra playlist',
     playlist: [

@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<title>Generar manifest.json de música — Amaris World</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root { color-scheme: dark; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: #0a0b16;
+    color: #f2f0f8;
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 32px 20px 80px;
+    line-height: 1.5;
+  }
+  h1 { font-size: 1.4rem; margin-bottom: 4px; }
+  p.lead { color: #b9b6cc; margin-top: 0; }
+  ol { padding-left: 20px; }
+  ol li { margin-bottom: 10px; }
+  .step { background: #14152a; border: 1px solid #262845; border-radius: 12px; padding: 18px 20px; margin: 18px 0; }
+  input[type="file"] { display: block; margin: 10px 0; }
+  button {
+    background: #7c6cf0; color: white; border: none; border-radius: 8px;
+    padding: 10px 18px; font-size: 0.95rem; cursor: pointer;
+  }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.secondary { background: #262845; }
+  table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 0.9rem; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #262845; }
+  td input { width: 100%; background: #0a0b16; color: #f2f0f8; border: 1px solid #262845; border-radius: 6px; padding: 4px 6px; }
+  #status { margin-top: 12px; font-size: 0.9rem; color: #b9b6cc; }
+  #status.error { color: #ff9b9b; }
+  #status.ok { color: #9bffb0; }
+  code { background: #0a0b16; padding: 1px 6px; border-radius: 4px; }
+  .count-badge {
+    display: inline-block; background: #262845; border-radius: 999px;
+    padding: 2px 10px; font-size: 0.85rem; margin-left: 8px;
+  }
+</style>
+</head>
+<body>
+
+  <h1>🎵 Generador de manifest.json</h1>
+  <p class="lead">
+    Detecta automáticamente TODAS las canciones que haya en tu carpeta
+    <code>assets/music/</code> (sin límite de cantidad) y genera el archivo
+    <code>assets/music/manifest.json</code> que usa el reproductor de
+    Amaris World. No hace falta escribir ningún nombre a mano.
+  </p>
+
+  <div class="step">
+    <strong>Paso 1.</strong> Elige la carpeta <code>assets/music/</code> de tu proyecto
+    (el navegador solo lee los nombres de archivo, nada se sube a ningún lado).
+    <input type="file" id="folderInput" webkitdirectory directory multiple />
+    <div id="status">Esperando selección de carpeta…</div>
+  </div>
+
+  <div class="step" id="reviewStep" style="display:none;">
+    <strong>Paso 2.</strong> Revisa la lista detectada
+    <span class="count-badge" id="countBadge">0 canciones</span>.
+    Puedes ajustar los títulos si quieres (opcional); el orden de la tabla
+    será el orden de reproducción.
+    <table id="tracksTable">
+      <thead><tr><th style="width:45%">Archivo</th><th>Título</th></tr></thead>
+      <tbody id="tracksBody"></tbody>
+    </table>
+  </div>
+
+  <div class="step" id="downloadStep" style="display:none;">
+    <strong>Paso 3.</strong> Descarga el manifiesto y colócalo dentro de
+    <code>assets/music/manifest.json</code> (reemplazando el anterior si ya existía).
+    <div style="margin-top:10px;">
+      <button id="downloadBtn">Descargar manifest.json</button>
+    </div>
+  </div>
+
+  <p class="lead" style="margin-top:32px;">
+    Cada vez que agregues o borres canciones de <code>assets/music/</code>,
+    vuelve a abrir esta página, repite estos 3 pasos y sube el nuevo
+    <code>manifest.json</code>. El reproductor siempre usará exactamente lo
+    que diga ese archivo — sin límites fijos de 12, 50 ni ningún otro número.
+  </p>
+
+<script>
+  const AUDIO_EXT = ['mp3', 'wav', 'ogg', 'oga', 'm4a', 'aac', 'flac', 'webm'];
+
+  const folderInput = document.getElementById('folderInput');
+  const statusEl = document.getElementById('status');
+  const reviewStep = document.getElementById('reviewStep');
+  const downloadStep = document.getElementById('downloadStep');
+  const tracksBody = document.getElementById('tracksBody');
+  const countBadge = document.getElementById('countBadge');
+  const downloadBtn = document.getElementById('downloadBtn');
+
+  let currentTracks = [];
+
+  function naturalCompare(a, b) {
+    return a.localeCompare(b, 'es', { numeric: true, sensitivity: 'base' });
+  }
+
+  function tituloDesdeArchivo(nombreArchivo) {
+    const sinExtension = nombreArchivo.replace(/\.[^/.]+$/, '');
+    const conEspacios = sinExtension.replace(/[-_]+/g, ' ').trim();
+    return conEspacios.replace(/\b\w/g, (c) => c.toUpperCase()) || sinExtension;
+  }
+
+  function renderTable(tracks) {
+    tracksBody.innerHTML = '';
+    tracks.forEach((track, i) => {
+      const tr = document.createElement('tr');
+
+      const tdFile = document.createElement('td');
+      tdFile.textContent = track.archivo;
+
+      const tdTitle = document.createElement('td');
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.value = track.titulo;
+      input.addEventListener('input', () => {
+        currentTracks[i].titulo = input.value;
+      });
+      tdTitle.appendChild(input);
+
+      tr.appendChild(tdFile);
+      tr.appendChild(tdTitle);
+      tracksBody.appendChild(tr);
+    });
+    countBadge.textContent = `${tracks.length} canción${tracks.length === 1 ? '' : 'es'}`;
+  }
+
+  folderInput.addEventListener('change', () => {
+    const files = Array.from(folderInput.files || []);
+
+    // TODOS los archivos de audio encontrados, sin ningún tope numérico.
+    const audioFiles = files.filter((f) => {
+      const ext = (f.name.split('.').pop() || '').toLowerCase();
+      return AUDIO_EXT.includes(ext);
+    });
+
+    if (!audioFiles.length) {
+      statusEl.textContent =
+        'No se encontró ningún archivo de audio en esa carpeta. Asegúrate de elegir assets/music/.';
+      statusEl.className = 'error';
+      reviewStep.style.display = 'none';
+      downloadStep.style.display = 'none';
+      return;
+    }
+
+    audioFiles.sort((a, b) => naturalCompare(a.name, b.name));
+
+    currentTracks = audioFiles.map((f) => ({
+      archivo: f.name,
+      titulo: tituloDesdeArchivo(f.name)
+    }));
+
+    statusEl.textContent = `Se detectaron ${currentTracks.length} canción(es) en la carpeta seleccionada.`;
+    statusEl.className = 'ok';
+
+    renderTable(currentTracks);
+    reviewStep.style.display = 'block';
+    downloadStep.style.display = 'block';
+  });
+
+  downloadBtn.addEventListener('click', () => {
+    const manifest = currentTracks.map((t) => ({ archivo: t.archivo, titulo: t.titulo }));
+    const blob = new Blob([JSON.stringify(manifest, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'manifest.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+</script>
+</body>
+</html>

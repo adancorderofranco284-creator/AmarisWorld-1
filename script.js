@@ -639,20 +639,124 @@
      El audio vive en <audio id="bgAudio"> (fuera de las pantallas), así que
      sigue sonando sin importar a qué zona o pantalla se navegue. La barra
      inferior (#miniPlayer) es el control de siempre-visible; el apartado
-     "Música" del mundo muestra además la lista completa para elegir canción. */
+     "Música" del mundo muestra además la lista completa para elegir canción.
 
-  const musicPlaylist =
+     ORIGEN DE LA PLAYLIST — SIN LÍMITE FIJO DE CANCIONES:
+     GitHub Pages / Netlify son hosting estático: el navegador NO puede pedirle
+     al servidor "dime qué archivos hay en assets/music/", así que no existe
+     forma 100% automática de leer la carpeta en vivo. La solución correcta
+     para este tipo de hosting es un "manifiesto": un archivo
+     assets/music/manifest.json que simplemente enumera los archivos reales
+     que hay en la carpeta. Esta página abre ese manifiesto con fetch() y
+     arma la playlist con TODO lo que encuentre ahí, sin ningún tope numérico
+     (nada de .slice(0, 12), nada de "if (n > 12)").
+
+     Para generar/actualizar ese manifiesto sin escribir nada a mano, usa el
+     archivo generate-manifest.html incluido: se abre en el navegador, eliges
+     la carpeta assets/music/ una vez, y descarga un manifest.json con TODAS
+     las canciones que haya en ese momento (12, 30, 200, las que sean). Cada
+     vez que agregues o quites canciones, repites ese paso de 10 segundos y
+     reemplazas el manifest.json — no hay que tocar script.js ni content.js.
+
+     Si por alguna razón manifest.json no existe todavía o no se puede leer,
+     se usa como respaldo la lista manual musica.playlist de data/content.js
+     (la que ya tenías) para que el reproductor nunca quede roto mientras
+     generas tu primer manifiesto. En cuanto exista manifest.json, ese
+     respaldo se ignora por completo. */
+
+  const FALLBACK_PLAYLIST =
     (window.AMARIS_CONTENT && window.AMARIS_CONTENT.musica && window.AMARIS_CONTENT.musica.playlist) || [];
+
+  let musicPlaylist = FALLBACK_PLAYLIST;
   let currentTrackIndex = 0;
   let musicLoadErrors = 0;
+  let musicReady = false;
+  let pendingAutoplay = false;
+  const musicReadyListeners = [];
+
+  function onMusicReady(fn) {
+    if (musicReady) {
+      fn();
+    } else {
+      musicReadyListeners.push(fn);
+    }
+  }
+
+  function markMusicReady() {
+    musicReady = true;
+    while (musicReadyListeners.length) {
+      musicReadyListeners.shift()();
+    }
+  }
+
+  // Convierte un nombre de archivo ("rose-3am-live.mp3") en un título legible
+  // ("Rose 3am Live") cuando el manifiesto no trae un título explícito.
+  function tituloDesdeArchivo(nombreArchivo) {
+    const sinExtension = String(nombreArchivo).replace(/\.[^/.]+$/, '');
+    const sinRuta = sinExtension.split('/').pop();
+    const conEspacios = sinRuta.replace(/[-_]+/g, ' ').trim();
+    return conEspacios.replace(/\b\w/g, (c) => c.toUpperCase()) || sinRuta;
+  }
+
+  // Descarga assets/music/manifest.json y arma la playlist con TODAS las
+  // canciones que contenga, sin límite alguno. No modifica ni depende de
+  // ninguna variable de bg-life.js ni de otras zonas de la página.
+  async function loadMusicPlaylist() {
+    try {
+      const res = await fetch('assets/music/manifest.json', { cache: 'no-store' });
+      if (!res.ok) throw new Error(`manifest.json respondió ${res.status}`);
+
+      const data = await res.json();
+      if (!Array.isArray(data)) throw new Error('manifest.json debe ser un arreglo');
+
+      const fromManifest = data
+        .map((entry) => {
+          if (typeof entry === 'string') entry = { archivo: entry };
+          if (!entry) return null;
+          const archivo = entry.archivo || entry.file || entry.nombre || entry.src;
+          if (!archivo) return null;
+          const src = /^([a-z]+:)?\/\//i.test(archivo) || archivo.includes('/')
+            ? archivo
+            : `assets/music/${archivo}`;
+          const titulo = entry.titulo || entry.title || tituloDesdeArchivo(archivo);
+          return { src, titulo };
+        })
+        .filter(Boolean);
+
+      // TODAS las canciones detectadas en el manifiesto quedan disponibles;
+      // no se recorta el arreglo a ningún tamaño máximo.
+      if (fromManifest.length) {
+        musicPlaylist = fromManifest;
+      }
+    } catch (err) {
+      // Sin manifest.json todavía (o con un error de formato): seguimos con
+      // la lista de respaldo de content.js para no romper el reproductor.
+      console.warn('[Música] Usando lista de respaldo (sin manifest.json todavía):', err.message);
+    }
+  }
 
   function getAudioEl() {
     return document.getElementById('bgAudio');
   }
 
+  // Se ejecuta UNA sola vez al cargar la página: engancha los botones fijos
+  // de la barra inferior. No depende de cuántas canciones haya.
+  function bindMiniPlayerControls() {
+    const miniPlayBtn = document.getElementById('miniPlayBtn');
+    const miniNextBtn = document.getElementById('miniNextBtn');
+    const miniPrevBtn = document.getElementById('miniPrevBtn');
+    if (miniPlayBtn) miniPlayBtn.addEventListener('click', playPauseToggle);
+    if (miniNextBtn) miniNextBtn.addEventListener('click', () => nextTrack(true));
+    if (miniPrevBtn) miniPrevBtn.addEventListener('click', prevTrack);
+  }
+
+  // Se ejecuta cuando la playlist (manifest.json o respaldo) ya está lista.
   function initMusicPlayer() {
     const audio = getAudioEl();
-    if (!audio || !musicPlaylist.length) return;
+    if (!audio || !musicPlaylist.length) {
+      markMusicReady();
+      return;
+    }
 
     audio.volume = 0.7;
 
@@ -660,8 +764,10 @@
     audio.addEventListener('pause', syncMusicUI);
     audio.addEventListener('ended', () => nextTrack(true));
     audio.addEventListener('error', () => {
-      // Si una canción no carga, salta a la siguiente automáticamente
-      // (con un límite para no dar vueltas infinitas si faltan todos los archivos).
+      // Si una canción no carga, salta a la siguiente automáticamente.
+      // El límite aquí es SOLO para no dar vueltas infinitas si faltan
+      // todos los archivos de audio; se ajusta solo al tamaño real de la
+      // playlist (musicPlaylist.length), sea cual sea ese tamaño.
       musicLoadErrors += 1;
       if (musicLoadErrors < musicPlaylist.length) {
         nextTrack(false);
@@ -670,23 +776,23 @@
 
     audio.src = musicPlaylist[0].src;
 
-    const miniPlayBtn = document.getElementById('miniPlayBtn');
-    const miniNextBtn = document.getElementById('miniNextBtn');
-    const miniPrevBtn = document.getElementById('miniPrevBtn');
-    if (miniPlayBtn) miniPlayBtn.addEventListener('click', playPauseToggle);
-    if (miniNextBtn) miniNextBtn.addEventListener('click', () => nextTrack(true));
-    if (miniPrevBtn) miniPrevBtn.addEventListener('click', prevTrack);
-
+    markMusicReady();
     syncMusicUI();
   }
 
   function showMiniPlayer() {
-    if (!musicPlaylist.length) return;
-    const miniPlayer = document.getElementById('miniPlayer');
-    if (!miniPlayer) return;
-    miniPlayer.setAttribute('aria-hidden', 'false');
-    miniPlayer.classList.add('is-visible');
-    document.body.classList.add('has-mini-player');
+    // Si el manifiesto todavía se está leyendo, esperamos a que esté listo
+    // antes de decidir si hay canciones que mostrar (onMusicReady ejecuta
+    // de inmediato si ya está listo, así que en el caso normal no hay
+    // ningún retraso perceptible).
+    onMusicReady(() => {
+      if (!musicPlaylist.length) return;
+      const miniPlayer = document.getElementById('miniPlayer');
+      if (!miniPlayer) return;
+      miniPlayer.setAttribute('aria-hidden', 'false');
+      miniPlayer.classList.add('is-visible');
+      document.body.classList.add('has-mini-player');
+    });
   }
 
   function loadTrack(index, autoplay) {
@@ -709,6 +815,14 @@
   // con sonido. Si por lo que sea el navegador la bloquea igual, no rompe
   // nada: el mini-player queda visible y listo para tocar play a mano.
   function startBackgroundMusic() {
+    if (!musicReady) {
+      // El manifiesto (o el respaldo) todavía se está leyendo: recordamos
+      // que hay que reproducir en cuanto esté listo, en vez de perder el
+      // gesto de clic del usuario (necesario para el autoplay con sonido).
+      pendingAutoplay = true;
+      return;
+    }
+
     const audio = getAudioEl();
     if (!audio || !musicPlaylist.length) return;
 
@@ -798,10 +912,31 @@
     title.textContent = `🎵 ${content.titulo || 'Nuestra playlist'}`;
     wrap.appendChild(title);
 
+    if (!musicReady) {
+      // El manifest.json (o el respaldo) todavía se está leyendo. En cuanto
+      // esté listo, si el usuario sigue en esta misma zona, se vuelve a
+      // dibujar automáticamente con la playlist completa.
+      const loading = document.createElement('p');
+      loading.className = 'music-hint';
+      loading.textContent = 'Cargando canciones…';
+      wrap.appendChild(loading);
+      body.appendChild(wrap);
+      onMusicReady(() => {
+        // Si el usuario ya cambió de zona, "wrap" fue eliminado del DOM al
+        // vaciarse #zoneBody (populateZoneContent hace body.innerHTML = '').
+        // Solo volvemos a dibujar si esta vista sigue siendo la visible.
+        if (wrap.isConnected) {
+          renderMusica(body);
+        }
+      });
+      return;
+    }
+
     if (!musicPlaylist.length) {
       const hint = document.createElement('p');
       hint.className = 'music-hint';
-      hint.textContent = 'Agrega tus canciones en assets/music/ (edita data/content.js) para activar el reproductor.';
+      hint.textContent =
+        'No se encontraron canciones. Genera assets/music/manifest.json con generate-manifest.html (o agrega canciones en data/content.js como respaldo).';
       wrap.appendChild(hint);
       body.appendChild(wrap);
       return;
@@ -989,6 +1124,16 @@
     const backFromSurpriseBtn = document.getElementById('backFromSurpriseBtn');
     if (backFromSurpriseBtn) backFromSurpriseBtn.addEventListener('click', exitSurprise);
 
-    initMusicPlayer();
+    // Los botones de la barra inferior se enganchan de inmediato; la
+    // playlist (manifest.json o respaldo) se resuelve aparte, sin bloquear
+    // el resto de la página.
+    bindMiniPlayerControls();
+    loadMusicPlaylist().then(() => {
+      initMusicPlayer();
+      if (pendingAutoplay) {
+        pendingAutoplay = false;
+        startBackgroundMusic();
+      }
+    });
   });
 })();
