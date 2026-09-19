@@ -15,7 +15,7 @@
     rel="stylesheet"
   />
 
-  <link rel="stylesheet" href="style.css?v=4" />
+  <link rel="stylesheet" href="style.css?v=3" />
 </head>
 <body>
 
@@ -116,17 +116,8 @@
        para que la canción siga sonando sin importar dónde esté el usuario. -->
   <div class="mini-player" id="miniPlayer" aria-hidden="true">
     <div class="mini-player-info">
-      <!-- Portada / logo de Amaris World: la imagen real se asigna desde
-           script.js (assets/felipe.jpg, .jpeg, .png o .webp — la primera
-           que exista). Mientras tanto se ve el marco oscuro con brillo. -->
-      <span class="mini-player-cover-wrap" aria-hidden="true">
-        <img class="mini-player-cover" id="miniPlayerCover" alt="" />
-      </span>
-      <span class="mini-player-text">
-        <span class="mini-player-brand">Amaris World</span>
-        <span class="mini-player-dedication">Mi sueño feliz, Raulito 🌙✨🤍</span>
-        <span class="mini-player-track" id="miniPlayerTrack">—</span>
-      </span>
+      <span class="mini-player-icon" aria-hidden="true">🎵</span>
+      <span class="mini-player-track" id="miniPlayerTrack">—</span>
     </div>
     <div class="mini-player-controls">
       <button class="mini-btn" id="miniPrevBtn" type="button" aria-label="Canción anterior">⏮</button>
@@ -137,7 +128,7 @@
 
   <script src="data/zones.js"></script>
   <script src="data/content.js"></script>
-  <script src="script.js"></script>
+  <script src="script.js?v=2"></script>
   <!-- Capa de vida sutil sobre el fondo (agua/luces/vegetación). No toca
        personajes, interfaz ni script.js — es completamente independiente. -->
   <script src="bg-life.js"></script>
