@@ -735,8 +735,212 @@
     }
   }
 
+  /* ---- 🌙 Identidad del reproductor "Amaris World" -------------------------
+     Estos valores son lo ÚNICO que hay que tocar si algún día quieres
+     cambiar el nombre, la dedicatoria o el archivo de la portada.
+
+     La portada se busca en assets/ probando estas extensiones en orden; se
+     usa la primera que exista realmente, así que basta con guardar la
+     imagen de Felipe como assets/felipe.jpg (o .png / .webp). */
+
+  const PLAYER_BRAND = 'Amaris World';
+  const PLAYER_DEDICATION = 'Mi sueño feliz, Raulito 🌙✨🤍';
+  const PLAYER_COVER_CANDIDATES = [
+    'assets/felipe.jpg',
+    'assets/felipe.jpeg',
+    'assets/felipe.png',
+    'assets/felipe.webp'
+  ];
+
+  // Clave de localStorage donde se recuerda la canción, la posición y el volumen.
+  const MUSIC_STORAGE_KEY = 'amaris-world-player-v1';
+
+  let playerCoverSrc = null;   // ruta real de la portada, una vez confirmada
+  let pendingResumeTime = 0;   // segundos a restaurar en cuanto cargue el audio
+  let lastStateSave = 0;
+
   function getAudioEl() {
     return document.getElementById('bgAudio');
+  }
+
+  /* ---- Memoria del reproductor (localStorage, siempre a prueba de fallos) --- */
+
+  function readMusicState() {
+    try {
+      const raw = window.localStorage.getItem(MUSIC_STORAGE_KEY);
+      if (!raw) return null;
+      const data = JSON.parse(raw);
+      return data && typeof data === 'object' ? data : null;
+    } catch (err) {
+      return null; // modo privado / almacenamiento bloqueado: seguimos igual
+    }
+  }
+
+  function saveMusicState(force) {
+    const audio = getAudioEl();
+    if (!audio) return;
+
+    const now = Date.now();
+    if (!force && now - lastStateSave < 2000) return; // no escribimos en cada tick
+    lastStateSave = now;
+
+    try {
+      const track = musicPlaylist[currentTrackIndex];
+      window.localStorage.setItem(
+        MUSIC_STORAGE_KEY,
+        JSON.stringify({
+          index: currentTrackIndex,
+          src: track ? track.src : null,
+          titulo: track ? track.titulo : null,
+          position: Number.isFinite(audio.currentTime) ? Math.max(0, Math.floor(audio.currentTime)) : 0,
+          volume: Number.isFinite(audio.volume) ? audio.volume : 0.7,
+          updatedAt: now
+        })
+      );
+    } catch (err) {
+      /* sin almacenamiento disponible: no pasa nada */
+    }
+  }
+
+  /* ---- Portada (logo de Felipe) -------------------------------------------- */
+
+  function resolvePlayerCover(callback) {
+    let i = 0;
+    (function tryNext() {
+      if (i >= PLAYER_COVER_CANDIDATES.length) {
+        callback(null); // no se encontró la imagen: el reproductor sigue funcionando
+        return;
+      }
+      const candidate = PLAYER_COVER_CANDIDATES[i++];
+      const probe = new Image();
+      probe.onload = function () { callback(candidate); };
+      probe.onerror = tryNext;
+      probe.src = candidate;
+    })();
+  }
+
+  function initPlayerCover() {
+    const img = document.getElementById('miniPlayerCover');
+    resolvePlayerCover(function (src) {
+      if (!src) return;
+      playerCoverSrc = src;
+      if (img) {
+        img.src = src;
+        img.classList.add('is-loaded');
+      }
+      updateMediaSessionMetadata(); // ya con artwork real
+    });
+  }
+
+  function absoluteUrl(path) {
+    try {
+      return new URL(path, window.location.href).href;
+    } catch (err) {
+      return path;
+    }
+  }
+
+  /* ---- Media Session — reproductor del celular / pantalla bloqueada --------
+     Solo se usa si el navegador la soporta; en los que no, todo lo demás
+     funciona exactamente igual que antes. */
+
+  function mediaSessionArtwork() {
+    if (!playerCoverSrc) return [];
+    const url = absoluteUrl(playerCoverSrc);
+    const type = /\.png$/i.test(playerCoverSrc)
+      ? 'image/png'
+      : /\.webp$/i.test(playerCoverSrc)
+        ? 'image/webp'
+        : 'image/jpeg';
+    // La misma imagen declarada en varios tamaños: Android/iOS eligen el que
+    // necesiten sin tener que generar copias del archivo.
+    return ['96x96', '128x128', '192x192', '256x256', '384x384', '512x512'].map(function (sizes) {
+      return { src: url, sizes: sizes, type: type };
+    });
+  }
+
+  function updateMediaSessionMetadata() {
+    if (!('mediaSession' in navigator) || typeof window.MediaMetadata !== 'function') return;
+    const track = musicPlaylist[currentTrackIndex];
+    try {
+      navigator.mediaSession.metadata = new window.MediaMetadata({
+        title: PLAYER_BRAND,
+        artist: PLAYER_DEDICATION,
+        album: track ? track.titulo : PLAYER_BRAND,
+        artwork: mediaSessionArtwork()
+      });
+    } catch (err) {
+      /* metadata no soportada: se ignora */
+    }
+  }
+
+  function setMediaSessionHandlers() {
+    if (!('mediaSession' in navigator) || !navigator.mediaSession.setActionHandler) return;
+
+    const handlers = {
+      play: function () {
+        const audio = getAudioEl();
+        if (!audio) return;
+        if (!audio.src) { loadTrack(currentTrackIndex, true); return; }
+        audio.play().catch(syncMusicUI);
+      },
+      pause: function () {
+        const audio = getAudioEl();
+        if (audio) audio.pause();
+      },
+      previoustrack: function () { prevTrack(); },
+      nexttrack: function () { nextTrack(true); },
+      seekbackward: function (details) {
+        const audio = getAudioEl();
+        if (!audio) return;
+        const offset = (details && details.seekOffset) || 10;
+        audio.currentTime = Math.max(0, audio.currentTime - offset);
+        updateMediaSessionPosition();
+      },
+      seekforward: function (details) {
+        const audio = getAudioEl();
+        if (!audio) return;
+        const offset = (details && details.seekOffset) || 10;
+        const max = Number.isFinite(audio.duration) ? audio.duration : audio.currentTime + offset;
+        audio.currentTime = Math.min(max, audio.currentTime + offset);
+        updateMediaSessionPosition();
+      },
+      seekto: function (details) {
+        const audio = getAudioEl();
+        if (!audio || !details || details.seekTime == null) return;
+        audio.currentTime = details.seekTime;
+        updateMediaSessionPosition();
+      },
+      stop: function () {
+        const audio = getAudioEl();
+        if (audio) audio.pause();
+      }
+    };
+
+    Object.keys(handlers).forEach(function (action) {
+      try {
+        navigator.mediaSession.setActionHandler(action, handlers[action]);
+      } catch (err) {
+        /* acción no soportada por este navegador: se omite sin romper nada */
+      }
+    });
+  }
+
+  function updateMediaSessionPosition() {
+    if (!('mediaSession' in navigator) || !navigator.mediaSession.setPositionState) return;
+    const audio = getAudioEl();
+    if (!audio) return;
+    const duration = audio.duration;
+    if (!Number.isFinite(duration) || duration <= 0) return;
+    try {
+      navigator.mediaSession.setPositionState({
+        duration: duration,
+        playbackRate: audio.playbackRate > 0 ? audio.playbackRate : 1,
+        position: Math.min(Math.max(audio.currentTime, 0), duration)
+      });
+    } catch (err) {
+      /* posición no soportada: se ignora */
+    }
   }
 
   // Se ejecuta UNA sola vez al cargar la página: engancha los botones fijos
@@ -758,11 +962,41 @@
       return;
     }
 
-    audio.volume = 0.7;
+    const savedState = readMusicState();
+
+    // Volumen recordado de la visita anterior (si lo hubiera).
+    audio.volume =
+      savedState && Number.isFinite(savedState.volume)
+        ? Math.min(1, Math.max(0, savedState.volume))
+        : 0.7;
 
     audio.addEventListener('play', syncMusicUI);
     audio.addEventListener('pause', syncMusicUI);
     audio.addEventListener('ended', () => nextTrack(true));
+
+    // Al cargar la canción, retomamos la posición guardada (una sola vez).
+    audio.addEventListener('loadedmetadata', () => {
+      if (pendingResumeTime > 0 && Number.isFinite(audio.duration)) {
+        try {
+          audio.currentTime = Math.min(pendingResumeTime, Math.max(0, audio.duration - 1));
+        } catch (err) {
+          /* algunos navegadores no permiten buscar antes de reproducir */
+        }
+      }
+      pendingResumeTime = 0;
+      updateMediaSessionPosition();
+    });
+
+    // Guardado periódico de la posición + posición para la pantalla bloqueada.
+    audio.addEventListener('timeupdate', () => {
+      saveMusicState(false);
+      updateMediaSessionPosition();
+    });
+    audio.addEventListener('volumechange', () => saveMusicState(true));
+    window.addEventListener('pagehide', () => saveMusicState(true));
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') saveMusicState(true);
+    });
     audio.addEventListener('error', () => {
       // Si una canción no carga, salta a la siguiente automáticamente.
       // El límite aquí es SOLO para no dar vueltas infinitas si faltan
@@ -774,7 +1008,30 @@
       }
     });
 
-    audio.src = musicPlaylist[0].src;
+    // Recuperamos la canción donde se quedó: primero se busca por ruta (por
+    // si cambió el orden del manifiesto) y, si no aparece, por índice.
+    let startIndex = 0;
+    if (savedState) {
+      const bySrc = musicPlaylist.findIndex((t) => t.src === savedState.src);
+      if (bySrc >= 0) {
+        startIndex = bySrc;
+      } else if (Number.isInteger(savedState.index) && savedState.index >= 0 && savedState.index < musicPlaylist.length) {
+        startIndex = savedState.index;
+      }
+      if (Number.isFinite(savedState.position) && savedState.position > 3) {
+        pendingResumeTime = savedState.position;
+      }
+    }
+
+    currentTrackIndex = startIndex;
+    audio.src = musicPlaylist[currentTrackIndex].src;
+
+    // IMPORTANTE: no se fuerza ningún autoplay aquí. La música solo arranca
+    // con un gesto del usuario (botón ENTRAR o play), como exigen iOS/Android.
+
+    setMediaSessionHandlers();
+    updateMediaSessionMetadata();
+    initPlayerCover();
 
     markMusicReady();
     syncMusicUI();
@@ -807,6 +1064,8 @@
       audio.play().catch(syncMusicUI);
     }
 
+    updateMediaSessionMetadata();
+    saveMusicState(true);
     syncMusicUI();
   }
 
@@ -871,6 +1130,14 @@
     const audio = getAudioEl();
     const isPlaying = !!(audio && !audio.paused && !audio.ended);
     const track = musicPlaylist[currentTrackIndex];
+
+    if ('mediaSession' in navigator) {
+      try {
+        navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
+      } catch (err) {
+        /* no soportado: se ignora */
+      }
+    }
 
     const miniPlayer = document.getElementById('miniPlayer');
     const miniTrack = document.getElementById('miniPlayerTrack');
@@ -992,6 +1259,7 @@
     volume.addEventListener('input', () => {
       const audio = getAudioEl();
       if (audio) audio.volume = Number(volume.value);
+      saveMusicState(true);
     });
 
     const list = document.createElement('ul');
