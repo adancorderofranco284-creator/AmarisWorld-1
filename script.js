@@ -450,7 +450,12 @@
       return new Promise((resolve) => {
         const img = new Image();
         img.onload = () => resolve(true);
-        img.onerror = () => resolve(false);
+        img.onerror = () => {
+          // TEMPORAL: solo para diagnosticar qué rutas de assets/recuerdos/
+          // no están cargando. No afecta nada visual ni funcional.
+          console.warn('[Recuerdos] No se pudo cargar:', src);
+          resolve(false);
+        };
         img.src = src;
       });
     }
