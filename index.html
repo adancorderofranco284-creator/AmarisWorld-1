@@ -116,8 +116,14 @@
        para que la canción siga sonando sin importar dónde esté el usuario. -->
   <div class="mini-player" id="miniPlayer" aria-hidden="true">
     <div class="mini-player-info">
-      <span class="mini-player-icon" aria-hidden="true">🎵</span>
-      <span class="mini-player-track" id="miniPlayerTrack">—</span>
+      <span class="mini-player-cover-wrap" aria-hidden="true">
+        <img class="mini-player-cover" id="miniPlayerCover" alt="" />
+      </span>
+      <div class="mini-player-text">
+        <span class="mini-player-brand"></span>
+        <span class="mini-player-dedication"></span>
+        <span class="mini-player-track" id="miniPlayerTrack">—</span>
+      </div>
     </div>
     <div class="mini-player-controls">
       <button class="mini-btn" id="miniPrevBtn" type="button" aria-label="Canción anterior">⏮</button>

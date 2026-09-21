@@ -758,6 +758,7 @@
   let playerCoverSrc = null;   // ruta real de la portada, una vez confirmada
   let pendingResumeTime = 0;   // segundos a restaurar en cuanto cargue el audio
   let lastStateSave = 0;
+  let isScrubbingProgress = false; // true mientras el usuario arrastra la barra de progreso
 
   function getAudioEl() {
     return document.getElementById('bgAudio');
@@ -954,6 +955,92 @@
     if (miniPrevBtn) miniPrevBtn.addEventListener('click', prevTrack);
   }
 
+  // Escribe PLAYER_BRAND / PLAYER_DEDICATION en el mini-player (los mismos
+  // valores que ya se usaban solo para la pantalla de bloqueo). Se llama una
+  // sola vez; el texto no cambia con la canción.
+  function initPlayerIdentity() {
+    const brandEl = document.querySelector('.mini-player-brand');
+    const dedicationEl = document.querySelector('.mini-player-dedication');
+    if (brandEl) brandEl.textContent = PLAYER_BRAND;
+    if (dedicationEl) dedicationEl.textContent = PLAYER_DEDICATION;
+  }
+
+  // "125" -> "2:05". Usado por la barra de progreso de la Music Box.
+  function formatPlayerTime(seconds) {
+    if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
+    const total = Math.floor(seconds);
+    const m = Math.floor(total / 60);
+    const s = total % 60;
+    return `${m}:${String(s).padStart(2, '0')}`;
+  }
+
+  // Sincroniza la barra de progreso + los tiempos de la zona "Música".
+  // No hace nada si esos elementos no están en el DOM en este momento
+  // (por ejemplo, si el usuario está en otra zona) — mismo patrón
+  // defensivo que ya usa syncMusicUI() con getElementById.
+  function updateProgressUI() {
+    const audio = getAudioEl();
+    if (!audio) return;
+    const range = document.getElementById('zoneProgressRange');
+    const curEl = document.getElementById('zoneTimeCurrent');
+    const totEl = document.getElementById('zoneTimeTotal');
+    const duration = audio.duration;
+    const hasDuration = Number.isFinite(duration) && duration > 0;
+
+    if (range && !isScrubbingProgress) {
+      range.value = hasDuration ? String((audio.currentTime / duration) * 100) : '0';
+    }
+    if (curEl) curEl.textContent = formatPlayerTime(audio.currentTime);
+    if (totEl) totEl.textContent = hasDuration ? formatPlayerTime(duration) : '0:00';
+  }
+
+  // Barra de título estilo "ventana retro" para la Music Box. El botón "×"
+  // reutiliza exitZone() (la misma función del botón "← VOLVER AL MUNDO"),
+  // así que cerrar la ventana simplemente vuelve al mundo. "_" y "□" son
+  // decorativos: no hay un gestor de ventanas real que minimizar/maximizar.
+  function createMusicBoxTitlebar() {
+    const titlebar = document.createElement('div');
+    titlebar.className = 'music-box-titlebar';
+
+    const icon = document.createElement('span');
+    icon.className = 'music-box-titlebar-icon';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.textContent = '🎵';
+
+    const text = document.createElement('span');
+    text.className = 'music-box-titlebar-text';
+    text.textContent = 'Music Box';
+
+    const actions = document.createElement('span');
+    actions.className = 'music-box-titlebar-actions';
+
+    const minDot = document.createElement('span');
+    minDot.className = 'music-box-dot';
+    minDot.setAttribute('aria-hidden', 'true');
+    minDot.textContent = '_';
+
+    const maxDot = document.createElement('span');
+    maxDot.className = 'music-box-dot';
+    maxDot.setAttribute('aria-hidden', 'true');
+    maxDot.textContent = '□';
+
+    const closeDot = document.createElement('button');
+    closeDot.type = 'button';
+    closeDot.className = 'music-box-dot music-box-dot--close';
+    closeDot.textContent = '×';
+    closeDot.setAttribute('aria-label', 'Volver al mundo');
+    closeDot.addEventListener('click', exitZone);
+
+    actions.appendChild(minDot);
+    actions.appendChild(maxDot);
+    actions.appendChild(closeDot);
+
+    titlebar.appendChild(icon);
+    titlebar.appendChild(text);
+    titlebar.appendChild(actions);
+    return titlebar;
+  }
+
   // Se ejecuta cuando la playlist (manifest.json o respaldo) ya está lista.
   function initMusicPlayer() {
     const audio = getAudioEl();
@@ -985,12 +1072,15 @@
       }
       pendingResumeTime = 0;
       updateMediaSessionPosition();
+      updateProgressUI();
     });
 
-    // Guardado periódico de la posición + posición para la pantalla bloqueada.
+    // Guardado periódico de la posición + posición para la pantalla bloqueada
+    // + barra de progreso de la Music Box (no hace nada si no está visible).
     audio.addEventListener('timeupdate', () => {
       saveMusicState(false);
       updateMediaSessionPosition();
+      updateProgressUI();
     });
     audio.addEventListener('volumechange', () => saveMusicState(true));
     window.addEventListener('pagehide', () => saveMusicState(true));
@@ -1032,6 +1122,7 @@
     setMediaSessionHandlers();
     updateMediaSessionMetadata();
     initPlayerCover();
+    initPlayerIdentity();
 
     markMusicReady();
     syncMusicUI();
@@ -1165,34 +1256,43 @@
       const icon = row.querySelector('.playlist-row-icon');
       if (icon) icon.textContent = isActive && isPlaying ? '⏸' : '▶';
     });
+
+    updateProgressUI();
   }
 
   function renderMusica(body) {
     const content = (window.AMARIS_CONTENT && window.AMARIS_CONTENT.musica) || {};
     body.classList.add('content-musica');
 
-    const wrap = document.createElement('div');
-    wrap.className = 'music-player';
-
     const title = document.createElement('h2');
     title.className = 'zone-title';
     title.textContent = `🎵 ${content.titulo || 'Nuestra playlist'}`;
-    wrap.appendChild(title);
+    body.appendChild(title);
+
+    // "music-box" es la carcasa visual nueva (ventana retro pixel-art);
+    // "music-player" se conserva por si algún estilo anterior lo usaba.
+    const wrap = document.createElement('div');
+    wrap.className = 'music-player music-box';
+    wrap.appendChild(createMusicBoxTitlebar());
 
     if (!musicReady) {
       // El manifest.json (o el respaldo) todavía se está leyendo. En cuanto
       // esté listo, si el usuario sigue en esta misma zona, se vuelve a
       // dibujar automáticamente con la playlist completa.
+      const screen = document.createElement('div');
+      screen.className = 'music-box-screen';
       const loading = document.createElement('p');
       loading.className = 'music-hint';
       loading.textContent = 'Cargando canciones…';
-      wrap.appendChild(loading);
+      screen.appendChild(loading);
+      wrap.appendChild(screen);
       body.appendChild(wrap);
       onMusicReady(() => {
         // Si el usuario ya cambió de zona, "wrap" fue eliminado del DOM al
         // vaciarse #zoneBody (populateZoneContent hace body.innerHTML = '').
         // Solo volvemos a dibujar si esta vista sigue siendo la visible.
         if (wrap.isConnected) {
+          body.innerHTML = '';
           renderMusica(body);
         }
       });
@@ -1200,24 +1300,96 @@
     }
 
     if (!musicPlaylist.length) {
+      const screen = document.createElement('div');
+      screen.className = 'music-box-screen';
       const hint = document.createElement('p');
       hint.className = 'music-hint';
       hint.textContent =
         'No se encontraron canciones. Genera assets/music/manifest.json con generate-manifest.html (o agrega canciones en data/content.js como respaldo).';
-      wrap.appendChild(hint);
+      screen.appendChild(hint);
+      wrap.appendChild(screen);
       body.appendChild(wrap);
       return;
     }
+
+    // ---- "Pantalla" de la Music Box: tocadiscos + pista actual -------------
+    const screen = document.createElement('div');
+    screen.className = 'music-box-screen';
 
     const vinyl = document.createElement('div');
     vinyl.className = 'vinyl';
     vinyl.id = 'zoneVinyl';
     vinyl.setAttribute('aria-hidden', 'true');
 
+    const nowPlayingWrap = document.createElement('div');
+    nowPlayingWrap.className = 'music-box-nowplaying';
+
     const nowPlaying = document.createElement('p');
     nowPlaying.className = 'now-playing-title';
     nowPlaying.id = 'nowPlayingTitle';
 
+    const nowArtist = document.createElement('p');
+    nowArtist.className = 'now-playing-artist';
+    nowArtist.id = 'nowPlayingArtist';
+    nowArtist.textContent = PLAYER_BRAND;
+
+    nowPlayingWrap.appendChild(nowPlaying);
+    nowPlayingWrap.appendChild(nowArtist);
+    screen.appendChild(vinyl);
+    screen.appendChild(nowPlayingWrap);
+    wrap.appendChild(screen);
+
+    // ---- Barra de progreso (nueva) ------------------------------------------
+    // Se guarda en porcentaje (0-100) para no depender de conocer la
+    // duración por adelantado. "input" solo actualiza el número en
+    // pantalla mientras se arrastra; "change" (al soltar) es lo que
+    // realmente mueve audio.currentTime, para no perseguir cada pixel
+    // mientras el usuario arrastra el dedo en móvil.
+    const progressRow = document.createElement('div');
+    progressRow.className = 'progress-row';
+
+    const timeCurrent = document.createElement('span');
+    timeCurrent.className = 'progress-time';
+    timeCurrent.id = 'zoneTimeCurrent';
+    timeCurrent.textContent = '0:00';
+
+    const progressRange = document.createElement('input');
+    progressRange.type = 'range';
+    progressRange.className = 'progress-range';
+    progressRange.id = 'zoneProgressRange';
+    progressRange.min = '0';
+    progressRange.max = '100';
+    progressRange.step = '0.1';
+    progressRange.value = '0';
+    progressRange.setAttribute('aria-label', 'Progreso de la canción');
+
+    const timeTotal = document.createElement('span');
+    timeTotal.className = 'progress-time';
+    timeTotal.id = 'zoneTimeTotal';
+    timeTotal.textContent = '0:00';
+
+    progressRange.addEventListener('input', () => {
+      isScrubbingProgress = true;
+      const audio = getAudioEl();
+      if (audio && Number.isFinite(audio.duration) && audio.duration > 0) {
+        timeCurrent.textContent = formatPlayerTime((Number(progressRange.value) / 100) * audio.duration);
+      }
+    });
+    progressRange.addEventListener('change', () => {
+      const audio = getAudioEl();
+      if (audio && Number.isFinite(audio.duration) && audio.duration > 0) {
+        audio.currentTime = (Number(progressRange.value) / 100) * audio.duration;
+        saveMusicState(true);
+      }
+      isScrubbingProgress = false;
+    });
+
+    progressRow.appendChild(timeCurrent);
+    progressRow.appendChild(progressRange);
+    progressRow.appendChild(timeTotal);
+    wrap.appendChild(progressRow);
+
+    // ---- Controles: anterior / play-pausa / siguiente (sin cambios) -------
     const controls = document.createElement('div');
     controls.className = 'music-controls';
 
@@ -1246,6 +1418,16 @@
     controls.appendChild(prevBtn);
     controls.appendChild(playBtn);
     controls.appendChild(nextBtn);
+    wrap.appendChild(controls);
+
+    // ---- Volumen (misma lógica de antes, con icono) ------------------------
+    const volumeRow = document.createElement('div');
+    volumeRow.className = 'volume-row';
+
+    const volumeIcon = document.createElement('span');
+    volumeIcon.className = 'volume-icon';
+    volumeIcon.setAttribute('aria-hidden', 'true');
+    volumeIcon.textContent = '🔊';
 
     const volume = document.createElement('input');
     volume.type = 'range';
@@ -1262,6 +1444,11 @@
       saveMusicState(true);
     });
 
+    volumeRow.appendChild(volumeIcon);
+    volumeRow.appendChild(volume);
+    wrap.appendChild(volumeRow);
+
+    // ---- Playlist (misma lógica de selección, + etiqueta de artista) ------
     const list = document.createElement('ul');
     list.className = 'playlist';
     list.setAttribute('role', 'listbox');
@@ -1282,22 +1469,28 @@
       icon.setAttribute('aria-hidden', 'true');
       icon.textContent = '▶';
 
+      const textWrap = document.createElement('span');
+      textWrap.className = 'playlist-row-text';
+
       const label = document.createElement('span');
       label.className = 'playlist-row-title';
       label.textContent = track.titulo;
 
+      const artistLabel = document.createElement('span');
+      artistLabel.className = 'playlist-row-artist';
+      artistLabel.textContent = PLAYER_BRAND;
+
+      textWrap.appendChild(label);
+      textWrap.appendChild(artistLabel);
+
       row.appendChild(icon);
-      row.appendChild(label);
+      row.appendChild(textWrap);
       row.addEventListener('click', () => selectTrack(index));
 
       li.appendChild(row);
       list.appendChild(li);
     });
 
-    wrap.appendChild(vinyl);
-    wrap.appendChild(nowPlaying);
-    wrap.appendChild(controls);
-    wrap.appendChild(volume);
     wrap.appendChild(list);
     body.appendChild(wrap);
 
