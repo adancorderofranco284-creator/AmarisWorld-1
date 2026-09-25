@@ -1,0 +1,440 @@
+/* ==========================================================================
+   AMARIS WORLD — piano-game.css
+   Estilos del minijuego "AMARIS PIANO". Namespace propio (.amaris-piano-*)
+   para no chocar con ninguna clase existente de style.css.
+   ========================================================================== */
+
+:root {
+  --ap-bg-deep: #0a0b16;
+  --ap-purple: #2d1b4e;
+  --ap-purple-soft: #4a2f7a;
+  --ap-pink: #ff8fd6;
+  --ap-gold: #ffd76a;
+  --ap-gold-strong: #ffe9a8;
+  --ap-blue: #7fd9ff;
+  --ap-note-size: 56px;
+  --ap-hitline-offset: 92px;
+}
+
+/* ---- Overlay / capa modal ------------------------------------------- */
+
+.amaris-piano-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+    env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+  background: radial-gradient(circle at 50% 20%, rgba(74, 47, 122, 0.55), rgba(10, 11, 22, 0.92) 65%);
+  backdrop-filter: blur(6px);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+  font-family: "Jost", sans-serif;
+}
+
+.amaris-piano-overlay.is-open {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.amaris-piano-modal {
+  position: relative;
+  width: min(480px, 94vw);
+  height: min(760px, 92dvh);
+  border-radius: 22px;
+  background: linear-gradient(180deg, #1a1330 0%, #120d22 55%, #0a0b16 100%);
+  border: 1px solid rgba(255, 215, 106, 0.25);
+  box-shadow: 0 0 0 1px rgba(255, 143, 214, 0.08), 0 30px 80px rgba(0, 0, 0, 0.55),
+    0 0 60px rgba(122, 76, 200, 0.25);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transform: scale(0.96) translateY(8px);
+  transition: transform 0.25s ease;
+}
+
+.amaris-piano-overlay.is-open .amaris-piano-modal {
+  transform: scale(1) translateY(0);
+}
+
+.amaris-piano-stars {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.amaris-piano-bgstar {
+  position: absolute;
+  width: 2px;
+  height: 2px;
+  border-radius: 50%;
+  background: #fff;
+  opacity: 0.6;
+  animation: ap-twinkle var(--dur, 3s) ease-in-out infinite;
+  animation-delay: var(--delay, 0s);
+}
+
+@keyframes ap-twinkle {
+  0%, 100% { opacity: 0.15; }
+  50% { opacity: 0.8; }
+}
+
+.amaris-piano-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 5;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 215, 106, 0.35);
+  background: rgba(10, 11, 22, 0.55);
+  color: var(--ap-gold-strong);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.amaris-piano-close:hover,
+.amaris-piano-close:focus-visible {
+  background: rgba(255, 143, 214, 0.18);
+  transform: scale(1.06);
+}
+
+/* ---- Pantallas comunes ------------------------------------------------ */
+
+.amaris-piano-screen {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 32px 24px;
+  gap: 10px;
+}
+
+.amaris-piano-screen--game {
+  justify-content: flex-start;
+  padding: 18px 14px 14px;
+  gap: 0;
+}
+
+.amaris-piano-eyebrow {
+  font-family: "Press Start 2P", monospace;
+  font-size: 15px;
+  color: var(--ap-gold-strong);
+  text-shadow: 0 0 14px rgba(255, 215, 106, 0.6);
+  margin: 0 0 6px;
+}
+
+.amaris-piano-tagline {
+  font-size: 18px;
+  color: #f4e9ff;
+  margin: 0;
+}
+
+.amaris-piano-subtagline {
+  font-size: 14px;
+  color: rgba(244, 233, 255, 0.7);
+  margin: 0 0 18px;
+}
+
+.amaris-piano-btn {
+  font-family: "Press Start 2P", monospace;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  color: #241536;
+  background: linear-gradient(180deg, var(--ap-gold-strong), var(--ap-gold));
+  border: none;
+  border-radius: 999px;
+  padding: 14px 28px;
+  cursor: pointer;
+  box-shadow: 0 6px 18px rgba(255, 215, 106, 0.35);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.amaris-piano-btn:hover,
+.amaris-piano-btn:focus-visible {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(255, 215, 106, 0.45);
+}
+
+.amaris-piano-btn--ghost {
+  background: transparent;
+  color: var(--ap-gold-strong);
+  border: 1px solid rgba(255, 215, 106, 0.5);
+  box-shadow: none;
+}
+
+/* ---- HUD (SCORE / COMBO) --------------------------------------------- */
+
+.amaris-piano-hud {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 10px 14px;
+  border-bottom: 1px solid rgba(255, 143, 214, 0.15);
+}
+
+.amaris-piano-hud-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.amaris-piano-hud-label {
+  font-family: "Press Start 2P", monospace;
+  font-size: 9px;
+  color: rgba(244, 233, 255, 0.65);
+  letter-spacing: 1px;
+}
+
+.amaris-piano-hud-value {
+  font-family: "Press Start 2P", monospace;
+  font-size: 18px;
+  color: var(--ap-gold-strong);
+  text-shadow: 0 0 10px rgba(255, 215, 106, 0.5);
+}
+
+/* ---- Feedback flotante (PERFECT / GREAT / MISS) ----------------------- */
+
+.amaris-piano-feedback {
+  position: absolute;
+  top: 96px;
+  left: 50%;
+  transform: translate(-50%, -6px);
+  z-index: 4;
+  font-family: "Press Start 2P", monospace;
+  font-size: 13px;
+  padding: 8px 16px;
+  border-radius: 10px;
+  background: rgba(10, 11, 22, 0.6);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.amaris-piano-feedback.is-visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.amaris-piano-feedback--perfect { color: var(--ap-gold-strong); text-shadow: 0 0 12px rgba(255, 215, 106, 0.7); }
+.amaris-piano-feedback--great { color: var(--ap-blue); text-shadow: 0 0 12px rgba(127, 217, 255, 0.6); }
+.amaris-piano-feedback--miss { color: #ff8a8a; text-shadow: 0 0 12px rgba(255, 138, 138, 0.5); }
+
+/* ---- Carriles ---------------------------------------------------------- */
+
+.amaris-piano-lanes {
+  position: relative;
+  flex: 1;
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+  touch-action: none;
+}
+
+.amaris-piano-lane {
+  position: relative;
+  flex: 1;
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(122, 76, 200, 0.08), rgba(122, 76, 200, 0.02));
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+
+.amaris-piano-lane-glow {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 100%, rgba(255, 143, 214, 0.18), transparent 60%);
+  pointer-events: none;
+}
+
+.amaris-piano-hitline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: var(--ap-hitline-offset);
+  height: 3px;
+  background: linear-gradient(90deg, transparent, var(--ap-gold-strong), transparent);
+  box-shadow: 0 0 14px rgba(255, 215, 106, 0.75);
+  z-index: 2;
+  pointer-events: none;
+}
+
+/* ---- Notas (caras de amigos) ------------------------------------------- */
+
+.amaris-piano-note {
+  position: absolute;
+  top: -4px;
+  left: 50%;
+  width: var(--ap-note-size);
+  height: var(--ap-note-size);
+  margin-left: calc(var(--ap-note-size) / -2);
+  border-radius: 50%;
+  will-change: transform;
+  z-index: 3;
+}
+
+.amaris-piano-note-glow {
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 215, 106, 0.45), transparent 70%);
+  filter: blur(2px);
+}
+
+.amaris-piano-note-img {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+  border: 3px solid var(--ap-gold-strong);
+  box-shadow: 0 0 10px rgba(255, 215, 106, 0.6), 0 3px 10px rgba(0, 0, 0, 0.4);
+  background: var(--ap-purple);
+}
+
+.amaris-piano-note--fallback {
+  display: flex;
+}
+
+.amaris-piano-note-initial {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "Press Start 2P", monospace;
+  font-size: 16px;
+  color: #241536;
+  background: var(--ap-fallback-color, var(--ap-pink));
+  border: 3px solid var(--ap-gold-strong);
+  box-shadow: 0 0 10px rgba(255, 215, 106, 0.6), 0 3px 10px rgba(0, 0, 0, 0.4);
+}
+
+.amaris-piano-note.is-near .amaris-piano-note-img,
+.amaris-piano-note.is-near .amaris-piano-note-initial {
+  box-shadow: 0 0 18px rgba(255, 215, 106, 0.9), 0 3px 10px rgba(0, 0, 0, 0.4);
+}
+
+.amaris-piano-note.is-judged {
+  transition: transform 0.18s ease, opacity 0.18s ease;
+  opacity: 0;
+  transform: scale(1.35) translateY(var(--ap-note-judge-y, 0));
+}
+
+.amaris-piano-note.is-perfect .amaris-piano-note-img,
+.amaris-piano-note.is-perfect .amaris-piano-note-initial {
+  box-shadow: 0 0 26px rgba(255, 215, 106, 1), 0 3px 10px rgba(0, 0, 0, 0.4);
+}
+
+.amaris-piano-note.is-miss {
+  opacity: 0;
+  transform: scale(0.85) translateY(6px);
+}
+
+/* ---- Explosión de partículas al acertar -------------------------------- */
+
+.amaris-piano-burst {
+  position: absolute;
+  left: 50%;
+  width: 6px;
+  height: 6px;
+  margin-left: -3px;
+  border-radius: 50%;
+  background: var(--ap-gold-strong);
+  box-shadow: 0 0 12px 4px rgba(255, 215, 106, 0.6), -20px -10px 0 -1px var(--ap-pink),
+    20px -14px 0 -1px var(--ap-blue), -14px 10px 0 -1px var(--ap-gold), 14px 12px 0 -1px var(--ap-pink);
+  animation: ap-burst 0.4s ease-out forwards;
+  pointer-events: none;
+  z-index: 4;
+}
+
+@keyframes ap-burst {
+  0% { opacity: 1; transform: scale(0.4); }
+  100% { opacity: 0; transform: scale(1.8); }
+}
+
+/* ---- Pantalla final ----------------------------------------------------- */
+
+.amaris-piano-results {
+  width: 100%;
+  max-width: 320px;
+  background: rgba(122, 76, 200, 0.12);
+  border: 1px solid rgba(255, 215, 106, 0.2);
+  border-radius: 16px;
+  padding: 18px;
+  margin: 10px 0 20px;
+}
+
+.amaris-piano-result-score {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 16px;
+}
+
+.amaris-piano-result-value {
+  font-family: "Press Start 2P", monospace;
+  font-size: 26px;
+  color: var(--ap-gold-strong);
+  text-shadow: 0 0 14px rgba(255, 215, 106, 0.6);
+}
+
+.amaris-piano-result-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  font-family: "Press Start 2P", monospace;
+  font-size: 13px;
+  color: #f4e9ff;
+}
+
+.amaris-piano-result-grid > div {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.amaris-piano-end-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+/* ---- Responsive ---------------------------------------------------------- */
+
+@media (max-width: 380px) {
+  :root {
+    --ap-note-size: 46px;
+    --ap-hitline-offset: 78px;
+  }
+  .amaris-piano-eyebrow { font-size: 13px; }
+  .amaris-piano-hud-value { font-size: 15px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .amaris-piano-bgstar { animation: none; opacity: 0.4; }
+  .amaris-piano-burst { animation: none; opacity: 0; }
+}
