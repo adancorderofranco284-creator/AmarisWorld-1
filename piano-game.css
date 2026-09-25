@@ -20,6 +20,27 @@
   --ap-blue: #7fd9ff;
   --ap-note-size: 56px;
   --ap-hitline-offset: 96px;
+  /* Paleta arcoíris compartida por notas, línea de golpe, partículas y
+     feedback. Un solo lugar para ajustar el tono del efecto. */
+  --ap-rainbow: conic-gradient(
+    from 0deg,
+    #ff6b6b,
+    #ffb35c,
+    #ffe066,
+    #7ee8a0,
+    #7fd9ff,
+    #c9a6ff,
+    #ff6b6b
+  );
+  --ap-rainbow-flat: linear-gradient(
+    90deg,
+    #ff6b6b,
+    #ffb35c,
+    #ffe066,
+    #7ee8a0,
+    #7fd9ff,
+    #c9a6ff
+  );
 }
 
 /* ---- Overlay / capa modal ------------------------------------------- */
@@ -33,8 +54,11 @@
   justify-content: center;
   padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
     env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
-  background: radial-gradient(circle at 50% 15%, rgba(74, 47, 122, 0.6), rgba(10, 11, 22, 0.94) 68%);
-  backdrop-filter: blur(6px);
+  /* Scrim MUY ligero: solo lo justo para que el modal se lea bien, sin
+     tapar el fondo/video de Amaris World que sigue detrás. El fondo del
+     piano NO es fijo — este overlay deja pasar lo que haya en el mundo. */
+  background: radial-gradient(circle at 50% 15%, rgba(74, 47, 122, 0.28), rgba(10, 11, 22, 0.42) 68%);
+  backdrop-filter: blur(3px);
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
@@ -60,10 +84,15 @@
   height: min(860px, 92dvh);
   border-radius: 40px;
   touch-action: pan-x pan-y;
-  background: linear-gradient(180deg, #170f2b 0%, #120d22 55%, #0a0b16 100%);
-  border: 7px solid #180f2a;
-  box-shadow: 0 0 0 1px rgba(255, 215, 106, 0.22), 0 30px 90px rgba(0, 0, 0, 0.6),
-    0 0 70px rgba(122, 76, 200, 0.3), inset 0 0 46px rgba(122, 76, 200, 0.14);
+  /* Fondo tipo "vidrio": deja intuir lo que hay detrás (el mundo/video de
+     Amaris World) en vez de un color sólido fijo. Fácil de re-tematizar
+     después: basta con ajustar esta variable de opacidad/tinte. */
+  background: linear-gradient(180deg, rgba(23, 15, 43, 0.55) 0%, rgba(18, 13, 34, 0.6) 55%, rgba(10, 11, 22, 0.68) 100%);
+  backdrop-filter: blur(18px) saturate(1.15);
+  -webkit-backdrop-filter: blur(18px) saturate(1.15);
+  border: 1.5px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 0 0 1px rgba(255, 215, 106, 0.16), 0 30px 90px rgba(0, 0, 0, 0.45),
+    0 0 70px rgba(122, 76, 200, 0.22), inset 0 0 46px rgba(122, 76, 200, 0.1);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -272,9 +301,23 @@
   transform: translate(-50%, -50%) scale(1);
 }
 
-.amaris-piano-feedback--perfect { color: var(--ap-gold-strong); text-shadow: 0 0 16px rgba(255, 215, 106, 0.8); }
+.amaris-piano-feedback--perfect {
+  background: var(--ap-rainbow-flat);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: var(--ap-gold-strong); /* respaldo si background-clip:text no es soportado */
+  filter: drop-shadow(0 2px 10px rgba(0, 0, 0, 0.55)) drop-shadow(0 0 14px rgba(255, 255, 255, 0.5));
+  animation: ap-feedback-shimmer 0.9s ease-in-out infinite;
+}
 .amaris-piano-feedback--great { color: var(--ap-blue); text-shadow: 0 0 16px rgba(127, 217, 255, 0.7); }
 .amaris-piano-feedback--miss { color: #ff7ea0; text-shadow: 0 0 16px rgba(255, 126, 160, 0.6); }
+
+@keyframes ap-feedback-shimmer {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 250% 50%; }
+}
 
 /* ---- Carriles — angostos, tipo "pistas musicales" ---------------------- */
 
@@ -285,17 +328,19 @@
   gap: 0;
   margin-top: 0;
   touch-action: none;
-  background: linear-gradient(180deg, rgba(122, 76, 200, 0.1) 0%, rgba(10, 11, 22, 0.25) 55%, rgba(122, 76, 200, 0.08) 100%);
-  box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.4);
+  /* Muy transparente a propósito: los carriles son "pistas" de cristal
+     sobre el fondo de Amaris World, no tarjetas opacas. */
+  background: linear-gradient(180deg, rgba(122, 76, 200, 0.05) 0%, rgba(10, 11, 22, 0.08) 55%, rgba(122, 76, 200, 0.04) 100%);
+  box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.22);
 }
 
 .amaris-piano-lane {
   position: relative;
   flex: 1;
   border-radius: 0;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.01));
-  border-left: 1px solid rgba(255, 215, 106, 0.14);
-  border-right: 1px solid rgba(255, 215, 106, 0.14);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.005));
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
   overflow: hidden;
 }
 
@@ -306,7 +351,7 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background: radial-gradient(circle at 50% 100%, rgba(255, 143, 214, 0.2), transparent 62%);
+  background: radial-gradient(circle at 50% 100%, rgba(255, 143, 214, 0.14), transparent 62%);
 }
 
 /* Un tinte sutil distinto por carril, como una franja de color muy suave
@@ -327,11 +372,12 @@
   right: 0;
   bottom: var(--ap-hitline-offset);
   height: 4px;
-  background: linear-gradient(90deg, transparent, var(--ap-gold-strong) 18%, #fff8e6 50%, var(--ap-gold-strong) 82%, transparent);
-  box-shadow: 0 0 18px 3px rgba(255, 215, 106, 0.55), 0 0 55px 10px rgba(255, 215, 106, 0.18);
+  background: var(--ap-rainbow-flat);
+  background-size: 220% 100%;
+  box-shadow: 0 0 18px 3px rgba(255, 215, 106, 0.45), 0 0 55px 10px rgba(122, 76, 200, 0.22);
   z-index: 2;
   pointer-events: none;
-  animation: ap-hitline-pulse 1.8s ease-in-out infinite;
+  animation: ap-hitline-pulse 1.8s ease-in-out infinite, ap-hitline-flow 6s linear infinite;
 }
 
 .amaris-piano-hitline::before {
@@ -342,13 +388,33 @@
   top: 50%;
   height: 52px;
   transform: translateY(-50%);
-  background: linear-gradient(180deg, rgba(255, 215, 106, 0.16), transparent 75%);
+  background: linear-gradient(180deg, rgba(255, 215, 106, 0.14), transparent 75%);
+  pointer-events: none;
+}
+
+/* Onda/flash arcoíris que recorre la línea cuando el jugador acierta. */
+.amaris-piano-hitline.is-flash::after {
+  content: "";
+  position: absolute;
+  inset: -14px 0;
+  background: radial-gradient(ellipse at center, rgba(255, 255, 255, 0.75), rgba(255, 215, 106, 0.35) 40%, transparent 72%);
+  animation: ap-hitline-flash 0.36s ease-out forwards;
   pointer-events: none;
 }
 
 @keyframes ap-hitline-pulse {
   0%, 100% { opacity: 0.85; }
   50% { opacity: 1; }
+}
+
+@keyframes ap-hitline-flow {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 220% 50%; }
+}
+
+@keyframes ap-hitline-flash {
+  0% { opacity: 1; transform: scaleY(0.4); }
+  100% { opacity: 0; transform: scaleY(2.2); }
 }
 
 /* ---- Notas (caras de amigos) ------------------------------------------- */
@@ -378,12 +444,55 @@
   pointer-events: none;
 }
 
+/* Trail sutil: una estela que "sube" desde la nota mientras cae, con un
+   ligero tinte arcoíris. Se mueve junto con la nota porque es su hijo. */
+.amaris-piano-note-trail {
+  position: absolute;
+  left: 50%;
+  bottom: 58%;
+  width: 3px;
+  height: calc(var(--ap-note-size) * 1.3);
+  transform: translateX(-50%);
+  background: linear-gradient(
+    to top,
+    rgba(255, 255, 255, 0.5),
+    rgba(127, 217, 255, 0.28) 45%,
+    rgba(201, 166, 255, 0.16) 75%,
+    transparent
+  );
+  filter: blur(1.5px);
+  pointer-events: none;
+  z-index: 0;
+}
+
 .amaris-piano-note-glow {
   position: absolute;
   inset: -9px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(255, 215, 106, 0.5), transparent 70%);
+  background: radial-gradient(circle, rgba(255, 215, 106, 0.45), transparent 70%);
   filter: blur(2px);
+  z-index: 1;
+}
+
+/* Anillo arcoíris rotando lentamente alrededor de cada foto — el "borde
+   luminoso" que convierte la foto en una nota de juego musical. Hecho con
+   un mask para dibujar solo el aro (grosor ~3px), sin tocar el <img>. */
+.amaris-piano-note-ring {
+  position: absolute;
+  inset: -5px;
+  border-radius: 50%;
+  padding: 3px;
+  background: var(--ap-rainbow);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.3));
+  animation: ap-ring-spin 2.6s linear infinite;
+  z-index: 2;
+}
+
+@keyframes ap-ring-spin {
+  to { transform: rotate(360deg); }
 }
 
 .amaris-piano-note-img {
@@ -393,9 +502,10 @@
   border-radius: 50%;
   object-fit: cover;
   display: block;
-  border: 3px solid var(--ap-gold-strong);
-  box-shadow: 0 0 14px rgba(255, 215, 106, 0.7), 0 4px 12px rgba(0, 0, 0, 0.45);
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 14px rgba(255, 215, 106, 0.55), 0 4px 12px rgba(0, 0, 0, 0.45);
   background: var(--ap-purple);
+  z-index: 3;
 }
 
 .amaris-piano-note--fallback {
@@ -414,13 +524,18 @@
   font-size: 16px;
   color: #241536;
   background: var(--ap-fallback-color, var(--ap-pink));
-  border: 3px solid var(--ap-gold-strong);
-  box-shadow: 0 0 14px rgba(255, 215, 106, 0.7), 0 4px 12px rgba(0, 0, 0, 0.45);
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 14px rgba(255, 215, 106, 0.55), 0 4px 12px rgba(0, 0, 0, 0.45);
+  z-index: 3;
 }
 
 .amaris-piano-note.is-near .amaris-piano-note-img,
 .amaris-piano-note.is-near .amaris-piano-note-initial {
   box-shadow: 0 0 20px rgba(255, 215, 106, 0.95), 0 4px 12px rgba(0, 0, 0, 0.45);
+}
+
+.amaris-piano-note.is-near .amaris-piano-note-ring {
+  animation-duration: 0.9s;
 }
 
 .amaris-piano-note.is-judged {
@@ -439,11 +554,15 @@
   transform: scale(0.85) translateY(6px);
 }
 
+.amaris-piano-note.is-miss .amaris-piano-note-ring {
+  opacity: 0;
+}
+
 /* ---- Golpe de acierto (cambio a la foto "hit") -------------------------- */
 /* Se dispara junto con is-judged/is-perfect/is-great, sobre el MISMO
    elemento de la nota (no crea nada nuevo): un pequeño "pop" de escala +
-   flash de brillo en la imagen y en el glow, justo cuando aparece la
-   imagen 2. Dura ~220ms, dentro de la ventana en la que la nota sigue
+   flash arcoíris en la imagen, el ring y el glow, justo cuando aparece la
+   imagen 2. Dura ~220-260ms, dentro de la ventana en la que la nota sigue
    visible antes de desvanecerse (is-judged). */
 
 .amaris-piano-note.is-hit .amaris-piano-note-img {
@@ -453,6 +572,11 @@
 
 .amaris-piano-note.is-hit .amaris-piano-note-glow {
   animation: ap-hit-glow 0.26s ease-out;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.6), rgba(255, 215, 106, 0.4) 45%, transparent 75%);
+}
+
+.amaris-piano-note.is-hit .amaris-piano-note-ring {
+  animation: ap-ring-spin 0.5s linear infinite, ap-hit-ring-flash 0.26s ease-out;
 }
 
 @keyframes ap-hit-pop {
@@ -467,26 +591,43 @@
   100% { opacity: 0.55; transform: scale(1.25); }
 }
 
+@keyframes ap-hit-ring-flash {
+  0% { filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.3)); }
+  45% { filter: drop-shadow(0 0 16px rgba(255, 255, 255, 0.9)); }
+  100% { filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.3)); }
+}
+
 /* ---- Explosión de partículas al acertar -------------------------------- */
+/* burstParticles() en piano-game.js crea 6 de estos, cada uno con su propio
+   --ap-burst-color / --ap-burst-angle / --ap-burst-delay, para que salgan
+   disparados en distintas direcciones formando un pequeño estallido
+   arcoíris desde la línea de golpe. */
 
 .amaris-piano-burst {
   position: absolute;
   left: 50%;
+  bottom: var(--ap-hitline-offset);
   width: 6px;
   height: 6px;
   margin-left: -3px;
   border-radius: 50%;
-  background: var(--ap-gold-strong);
-  box-shadow: 0 0 12px 4px rgba(255, 215, 106, 0.6), -20px -10px 0 -1px var(--ap-pink),
-    20px -14px 0 -1px var(--ap-blue), -14px 10px 0 -1px var(--ap-gold), 14px 12px 0 -1px var(--ap-pink);
-  animation: ap-burst 0.4s ease-out forwards;
+  background: var(--ap-burst-color, var(--ap-gold-strong));
+  box-shadow: 0 0 10px 3px var(--ap-burst-color, rgba(255, 215, 106, 0.6));
+  animation: ap-burst 0.42s ease-out forwards;
+  animation-delay: var(--ap-burst-delay, 0ms);
   pointer-events: none;
   z-index: 4;
 }
 
 @keyframes ap-burst {
-  0% { opacity: 1; transform: scale(0.4); }
-  100% { opacity: 0; transform: scale(1.8); }
+  0% {
+    opacity: 1;
+    transform: rotate(var(--ap-burst-angle, 0deg)) translateX(0) scale(0.6);
+  }
+  100% {
+    opacity: 0;
+    transform: rotate(var(--ap-burst-angle, 0deg)) translateX(30px) scale(0.9);
+  }
 }
 
 /* ---- Pantalla final ----------------------------------------------------- */
@@ -631,6 +772,9 @@
   .amaris-piano-bgstar { animation: none; opacity: 0.4; }
   .amaris-piano-burst { animation: none; opacity: 0; }
   .amaris-piano-hitline { animation: none; }
+  .amaris-piano-hitline.is-flash::after { animation: none; opacity: 0; }
+  .amaris-piano-note-ring { animation: none; }
+  .amaris-piano-feedback--perfect { animation: none; }
   .amaris-piano-note.is-hit .amaris-piano-note-img,
   .amaris-piano-note.is-hit .amaris-piano-note-glow { animation: none; }
 }

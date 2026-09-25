@@ -321,9 +321,20 @@
     var wrap = document.createElement("div");
     wrap.className = "amaris-piano-note";
 
+    // Trail sutil detrás de la nota mientras cae (puramente decorativo).
+    var trail = document.createElement("span");
+    trail.className = "amaris-piano-note-trail";
+    wrap.appendChild(trail);
+
     var glow = document.createElement("span");
     glow.className = "amaris-piano-note-glow";
     wrap.appendChild(glow);
+
+    // Anillo arcoíris rotatorio alrededor de la foto (puramente decorativo,
+    // no interfiere con hit-testing: el toque sigue siendo por carril).
+    var ring = document.createElement("span");
+    ring.className = "amaris-piano-note-ring";
+    wrap.appendChild(ring);
 
     var img = document.createElement("img");
     img.className = "amaris-piano-note-img";
@@ -416,14 +427,39 @@
     }, 500);
   }
 
+  // Pequeña explosión de 6 partículas, cada una con un color distinto del
+  // arcoíris, saliendo desde el punto de impacto. Mismo sitio/tiempo que
+  // antes (420ms), solo más vistoso.
+  var AP_RAINBOW = ["#ff6b6b", "#ffb35c", "#ffe066", "#7ee8a0", "#7fd9ff", "#c9a6ff"];
+
   function burstParticles(laneEl) {
-    var burst = document.createElement("span");
-    burst.className = "amaris-piano-burst";
-    burst.style.bottom = "var(--ap-hitline-offset)";
-    laneEl.appendChild(burst);
+    for (var i = 0; i < AP_RAINBOW.length; i++) {
+      (function (index) {
+        var particle = document.createElement("span");
+        particle.className = "amaris-piano-burst";
+        particle.style.bottom = "var(--ap-hitline-offset)";
+        particle.style.setProperty("--ap-burst-color", AP_RAINBOW[index]);
+        particle.style.setProperty("--ap-burst-angle", (index * (360 / AP_RAINBOW.length)) + "deg");
+        particle.style.setProperty("--ap-burst-delay", (index * 12) + "ms");
+        laneEl.appendChild(particle);
+        window.setTimeout(function () {
+          if (particle.parentNode) particle.parentNode.removeChild(particle);
+        }, 460);
+      })(i);
+    }
+  }
+
+  // Pequeño "flash" arcoíris en la línea de golpe cuando el jugador acierta
+  // (efecto puramente visual vía clase CSS, se auto-remueve solo).
+  function flashHitline() {
+    if (!els.hitline) return;
+    els.hitline.classList.remove("is-flash");
+    // Forzar reflow para poder reiniciar la animación si se acierta rápido.
+    void els.hitline.offsetWidth;
+    els.hitline.classList.add("is-flash");
     window.setTimeout(function () {
-      if (burst.parentNode) burst.parentNode.removeChild(burst);
-    }, 420);
+      els.hitline.classList.remove("is-flash");
+    }, 360);
   }
 
   // Cambia la <img> de la nota a la foto de "acierto" del amigo, SIN crear
@@ -462,6 +498,7 @@
 
       showFeedback(kind === "perfect" ? "PERFECT +100" : "GREAT +50", kind);
       burstParticles(laneEl);
+      flashHitline();
       playPianoNote(note.lane);
       if (navigator.vibrate) {
         try {
