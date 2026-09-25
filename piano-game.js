@@ -14,7 +14,34 @@
    Extra (no rompe la API pedida, solo la complementa):
      window.AmarisPiano.setChart(chart) → usa un chart fijo en vez de
        generación automática. chart = [{ time, lane, friend }, ...]
-       time en ms desde el inicio de la partida.
+       time en ms desde el inicio de la partida. Tiene prioridad sobre
+       cualquier chart definido dentro de PIANO_SONGS (ver abajo).
+     window.AmarisPiano.setSong(id) → cambia la canción activa antes de
+       abrir/empezar la partida. id debe existir en PIANO_SONGS.
+
+   PUNTO DE ENTRADA (SORPRESA):
+     Este módulo también engancha, si existe en el DOM, el botón
+     #surprisePianoBtn (la tarjeta "🎹 AMARIS PIANO" dentro de la
+     pantalla #surpriseScreen de index.html) para abrir el juego. Si ese
+     botón no existe todavía o cambia de id, esto simplemente no hace
+     nada — no rompe el resto del módulo ni de la página.
+
+   SISTEMA DE MÚSICA (assets/piano-music/):
+     PIANO_SONGS define las canciones disponibles. Al comenzar una
+     partida se selecciona la canción activa (por defecto la primera de
+     la lista, o la fijada con setSong()), se carga y se reproduce con
+     un <audio> propio e independiente del reproductor principal de
+     Amaris World (#bgAudio). Si esa canción define su propio arreglo
+     "chart", se usa automáticamente para sincronizar las notas; si no,
+     se mantiene intacto el generador automático de notas ya existente.
+     Si el archivo .mp3 todavía no existe (aún no lo copiaste a
+     assets/piano-music/), el juego sigue funcionando igual, sin música
+     y con generación automática — nunca se rompe ni se queda colgado.
+
+     Para agregar una canción nueva, solo edita el arreglo PIANO_SONGS
+     de más abajo, por ejemplo:
+       { id: "cancion-amaris", name: "Canción de Amaris",
+         file: "assets/piano-music/cancion-amaris.mp3" }
 
    ========================================================================== */
 
@@ -39,6 +66,45 @@
     { id: "amigo3", name: "Amigo 3", image: "assets/friends/amigo3.webp" },
     { id: "amigo4", name: "Amigo 4", image: "assets/friends/amigo4.webp" }
   ];
+
+  // 🎵 Canciones del piano. Los archivos .mp3 van en assets/piano-music/
+  // (tú los colocas manualmente ahí; el juego solo necesita la ruta).
+  // Agregar una canción nueva = agregar un objeto más a este arreglo.
+  //
+  // "chart" es OPCIONAL por canción: si lo defines, esa canción usa esas
+  // notas sincronizadas en vez de la generación automática. Formato
+  // idéntico al de setChart(): [{ time, lane, friend }, ...] en ms desde
+  // el inicio de la canción.
+  var PIANO_SONGS = [
+    { id: "piano-theme", name: "Piano Theme", file: "assets/piano-music/piano-theme.mp3" },
+    { id: "song1", name: "Song 1", file: "assets/piano-music/song1.mp3" }
+    // Ejemplo para agregar más:
+    // { id: "cancion-amaris", name: "Canción de Amaris", file: "assets/piano-music/cancion-amaris.mp3" }
+    // Ejemplo con chart sincronizado propio:
+    // {
+    //   id: "song2",
+    //   name: "Song 2",
+    //   file: "assets/piano-music/song2.mp3",
+    //   chart: [
+    //     { time: 1000, lane: 0, friend: 0 },
+    //     { time: 1500, lane: 1, friend: 1 },
+    //     { time: 2000, lane: 2, friend: 0 },
+    //     { time: 2500, lane: 3, friend: 2 }
+    //   ]
+    // }
+  ];
+
+  // Canción usada por defecto al abrir una partida si nadie llamó a
+  // AmarisPiano.setSong(). Cambia este id para cambiar la canción por
+  // defecto sin tener que reordenar PIANO_SONGS.
+  var DEFAULT_SONG_ID = PIANO_SONGS.length ? PIANO_SONGS[0].id : null;
+
+  function getSongById(id) {
+    for (var i = 0; i < PIANO_SONGS.length; i++) {
+      if (PIANO_SONGS[i].id === id) return PIANO_SONGS[i];
+    }
+    return null;
+  }
 
   var CONFIG = {
     lanes: 4,
@@ -65,7 +131,8 @@
     gameStartTime: 0, // performance.now() al iniciar partida
     lastSpawnTime: 0,
     nextSpawnIn: 0,
-    chart: null, // si se define con setChart(), se usa en vez de auto-generar
+    chart: null, // chart efectivo de la partida actual (externo, de la canción, o null = auto-generar)
+    externalChart: null, // fijado SOLO por AmarisPiano.setChart(); tiene prioridad sobre el chart de la canción
     chartIndex: 0,
     notes: [], // notas activas en pantalla
     score: 0,
@@ -76,7 +143,13 @@
     missCount: 0,
     laneMetrics: null, // { travelPx } recalculado por carril
     previousActiveElement: null,
-    previousHtmlOverflow: ""
+    previousHtmlOverflow: "",
+
+    // ---- Música de la partida (independiente del reproductor principal) --
+    activeSongId: null, // fijado con AmarisPiano.setSong(); si es null, se usa DEFAULT_SONG_ID
+    songAudio: null, // <audio> propio del piano, creado bajo demanda
+    songAudioFailed: false, // true si la canción actual no pudo cargar/reproducirse
+    mainAudioWasPlaying: false // si #bgAudio (Amaris World) sonaba antes de abrir el piano
   };
 
   var els = {}; // referencias DOM, pobladas en buildDOM()
@@ -123,6 +196,131 @@
     gain.connect(ctx.destination);
     osc.start(now);
     osc.stop(now + 0.6);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* 3.1) MÚSICA DE LA CANCIÓN — independiente del reproductor principal  */
+  /* ------------------------------------------------------------------ */
+
+  function getActiveSong() {
+    return getSongById(state.activeSongId) || getSongById(DEFAULT_SONG_ID) || PIANO_SONGS[0] || null;
+  }
+
+  function ensureSongAudioEl() {
+    if (state.songAudio) return state.songAudio;
+    var audio = new Audio();
+    audio.preload = "auto";
+    audio.loop = false;
+    // No usa Web Audio API a propósito: HTMLAudioElement es más simple y
+    // suficiente para reproducir un mp3 de fondo, y no interfiere con el
+    // AudioContext ya usado para el "ding" de cada nota (playPianoNote).
+    state.songAudio = audio;
+    return audio;
+  }
+
+  function stopSongAudio() {
+    if (!state.songAudio) return;
+    try {
+      state.songAudio.pause();
+      state.songAudio.currentTime = 0;
+    } catch (e) {
+      /* algunos navegadores lanzan si el audio nunca llegó a cargar; se ignora */
+    }
+  }
+
+  // Selecciona la canción activa, la carga (si hace falta) y la reproduce.
+  // Llama a callback() en cuanto la reproducción arranca de verdad — o, si
+  // el archivo no existe/falla/tarda, a los 400ms como resguardo, para que
+  // la partida NUNCA se quede esperando indefinidamente a un mp3 ausente.
+  function startActiveSongAndThen(callback) {
+    var song = getActiveSong();
+    state.songAudioFailed = false;
+
+    if (!song) {
+      callback();
+      return;
+    }
+
+    var audio = ensureSongAudioEl();
+    var settled = false;
+    var fallbackTimer = null;
+
+    function finish() {
+      if (settled) return;
+      settled = true;
+      audio.removeEventListener("playing", onPlaying);
+      audio.removeEventListener("error", onError);
+      window.clearTimeout(fallbackTimer);
+      callback();
+    }
+    function onPlaying() {
+      finish();
+    }
+    function onError() {
+      state.songAudioFailed = true;
+      finish();
+    }
+
+    audio.addEventListener("playing", onPlaying);
+    audio.addEventListener("error", onError);
+
+    if (audio.dataset.apLoadedSrc !== song.file) {
+      audio.src = song.file;
+      audio.dataset.apLoadedSrc = song.file;
+    } else {
+      try {
+        audio.currentTime = 0;
+      } catch (e) {
+        /* ignorar: algunos navegadores no permiten reasignar currentTime antes de cargar */
+      }
+    }
+
+    var playPromise = audio.play();
+    if (playPromise && typeof playPromise.catch === "function") {
+      playPromise.catch(function () {
+        // Bloqueo de autoplay, archivo ausente, etc.: seguimos sin música.
+        state.songAudioFailed = true;
+        finish();
+      });
+    }
+
+    fallbackTimer = window.setTimeout(finish, 400);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* 3.2) COORDINACIÓN CON EL REPRODUCTOR PRINCIPAL DE AMARIS WORLD      */
+  /* Usa únicamente el elemento público <audio id="bgAudio"> mediante su */
+  /* API estándar (pause/play). script.js ya escucha los eventos nativos */
+  /* "play"/"pause" de ese audio para refrescar el mini-player, así que  */
+  /* NO hace falta tocar script.js: el ícono/estado del mini-player se   */
+  /* actualiza solo. Esto es lo único que este módulo toca de fuera de   */
+  /* su propio namespace .amaris-piano-* / #amarisPianoOverlay.          */
+  /* ------------------------------------------------------------------ */
+
+  function pauseMainWorldAudio() {
+    var audio = document.getElementById("bgAudio");
+    state.mainAudioWasPlaying = !!(audio && !audio.paused && !audio.ended);
+    if (audio && state.mainAudioWasPlaying) {
+      try {
+        audio.pause();
+      } catch (e) {
+        /* ignorar */
+      }
+    }
+  }
+
+  function resumeMainWorldAudioIfNeeded() {
+    var audio = document.getElementById("bgAudio");
+    if (audio && state.mainAudioWasPlaying) {
+      var p = audio.play();
+      if (p && typeof p.catch === "function") {
+        p.catch(function () {
+          /* si el navegador bloquea la reanudación automática, no pasa nada:
+             el usuario puede volver a darle play desde el mini-player */
+        });
+      }
+    }
+    state.mainAudioWasPlaying = false;
   }
 
   /* ------------------------------------------------------------------ */
@@ -599,26 +797,47 @@
     //    por eso measureLaneMetrics() se movió después de showScreen().
     showScreen("playing");
     updateHUD();
-
-    // 2) Esperar a que el navegador pinte ese cambio (un frame) antes de
-    //    calcular dimensiones reales.
     window.cancelAnimationFrame(state.rafId);
-    window.requestAnimationFrame(function () {
-      // 3) Calcular dimensiones reales / 4) posición de la línea de precisión
-      measureLaneMetrics();
 
-      // 5) Inicializar el reloj de la partida y las notas
-      state.gameStartTime = performance.now();
-      state.lastSpawnTime = state.gameStartTime;
-      state.nextSpawnIn = CONFIG.spawnInterval.min;
-      state.chartIndex = 0;
+    // 2) Seleccionar + cargar + reproducir la canción de esta partida.
+    //    startActiveSongAndThen() llama al callback en cuanto la música
+    //    arranca de verdad (o a los 400ms si no hay/fallo el mp3), así el
+    //    reloj de la partida queda sincronizado con el inicio real del audio.
+    startActiveSongAndThen(function () {
+      // 3) Esperar a que el navegador pinte el cambio de pantalla (un
+      //    frame) antes de calcular dimensiones reales.
+      window.requestAnimationFrame(function () {
+        // 4) Calcular dimensiones reales / posición de la línea de precisión
+        measureLaneMetrics();
 
-      // 6) Iniciar requestAnimationFrame → 7) comienza el juego
-      state.rafId = window.requestAnimationFrame(tick);
+        // 5) Inicializar el reloj de la partida y las notas
+        state.gameStartTime = performance.now();
+        state.lastSpawnTime = state.gameStartTime;
+        state.nextSpawnIn = CONFIG.spawnInterval.min;
+        state.chartIndex = 0;
+
+        // Chart efectivo: el fijado explícitamente con setChart() manda
+        // siempre; si no hay ninguno, se usa el de la canción activa (si
+        // esta define uno); si tampoco hay, se mantiene la generación
+        // automática de notas ya existente, sin cambios.
+        var song = getActiveSong();
+        var songChart = song && Array.isArray(song.chart) ? song.chart : null;
+        state.chart = state.externalChart
+          ? state.externalChart
+          : songChart
+          ? songChart.slice().sort(function (a, b) {
+              return a.time - b.time;
+            })
+          : null;
+
+        // 6) Iniciar requestAnimationFrame → 7) comienza el juego
+        state.rafId = window.requestAnimationFrame(tick);
+      });
     });
   }
 
   function endGame() {
+    stopSongAudio();
     showScreen("end");
     els.finalScore.textContent = String(state.score);
     els.finalPerfect.textContent = String(state.perfectCount);
@@ -636,6 +855,7 @@
 
   function resetGame() {
     window.cancelAnimationFrame(state.rafId);
+    stopSongAudio();
     clearNotes();
     state.score = 0;
     state.combo = 0;
@@ -676,6 +896,11 @@
     buildDOM();
     resumeAudio();
 
+    // Evita que suenen dos músicas a la vez: si el reproductor principal
+    // de Amaris World estaba sonando, se pausa (guardando que estaba
+    // sonando) para restaurarlo tal cual al cerrar el piano.
+    pauseMainWorldAudio();
+
     state.previousActiveElement = document.activeElement;
     state.previousHtmlOverflow = document.documentElement.style.overflow;
     document.documentElement.style.overflow = "hidden";
@@ -704,7 +929,13 @@
     if (!state.built) return;
 
     window.cancelAnimationFrame(state.rafId);
+    stopSongAudio();
     clearNotes();
+
+    // Restaura el estado anterior de Amaris World: si su música sonaba
+    // antes de abrir el piano, vuelve a sonar; si no sonaba, se queda en
+    // silencio, tal como estaba.
+    resumeMainWorldAudioIfNeeded();
 
     els.overlay.classList.remove("is-open");
     els.overlay.setAttribute("aria-hidden", "true");
@@ -729,10 +960,21 @@
     close: closeGame,
     start: startGame,
     reset: resetGame,
+    // Fija un chart fijo para TODAS las partidas, sin importar la canción
+    // activa (tiene prioridad sobre cualquier "chart" definido dentro de
+    // PIANO_SONGS). Pasa null para volver a dejar que cada canción (o el
+    // generador automático) decida.
     setChart: function (chart) {
-      state.chart = Array.isArray(chart) ? chart.slice().sort(function (a, b) {
-        return a.time - b.time;
-      }) : null;
+      state.externalChart = Array.isArray(chart)
+        ? chart.slice().sort(function (a, b) {
+            return a.time - b.time;
+          })
+        : null;
+    },
+    // Cambia la canción activa para la próxima partida (id de PIANO_SONGS).
+    // Si el id no existe, no hace nada (se queda con la canción anterior).
+    setSong: function (id) {
+      if (getSongById(id)) state.activeSongId = id;
     }
   };
 
@@ -745,4 +987,27 @@
   //   { time: 2000, lane: 2, friend: 2 },
   //   { time: 2500, lane: 3, friend: 3 }
   // ]);
+
+  /* ------------------------------------------------------------------ */
+  /* 9) PUNTO DE ENTRADA DESDE "SORPRESA"                                 */
+  /* Engancha la tarjeta "🎹 AMARIS PIANO" (#surprisePianoBtn) que vive   */
+  /* dentro de #surpriseScreen en index.html. Es independiente y          */
+  /* defensivo: si el botón no existe (aún no se agregó al HTML, o        */
+  /* cambió de id), simplemente no hace nada — no rompe nada más.         */
+  /* ------------------------------------------------------------------ */
+
+  function bindSurpriseLauncher() {
+    var btn = document.getElementById("surprisePianoBtn");
+    if (!btn || btn.dataset.apBound === "1") return; // ya enganchado o no existe
+    btn.dataset.apBound = "1";
+    btn.addEventListener("click", function () {
+      openGame();
+    });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", bindSurpriseLauncher);
+  } else {
+    bindSurpriseLauncher();
+  }
 })();

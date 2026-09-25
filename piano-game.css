@@ -8,6 +8,11 @@
    is-visible, --fallback), solo se ve distinto — más cerca de un juego
    de ritmo móvil real, con carriles angostos tipo "pistas", línea de
    impacto más protagonista y HUD compacto flotando sobre el juego.
+
+   INTEGRACIÓN CON "SORPRESA": al final de este archivo hay una sección
+   nueva (.surprise-piano-card) con el estilo de la tarjeta "🎹 AMARIS
+   PIANO" que vive dentro de #surpriseScreen en index.html. Se estilo
+   aquí, junto al resto del feature, para no tocar style.css.
    ========================================================================== */
 
 :root {
@@ -777,4 +782,98 @@
   .amaris-piano-feedback--perfect { animation: none; }
   .amaris-piano-note.is-hit .amaris-piano-note-img,
   .amaris-piano-note.is-hit .amaris-piano-note-glow { animation: none; }
+}
+
+/* ==========================================================================
+   TARJETA DE LANZAMIENTO — dentro de la pantalla SORPRESA
+   Vive en index.html dentro de #surpriseScreen > .surprise-content, como
+   #surprisePianoCard / #surprisePianoBtn. Su animación de entrada usa el
+   sistema [data-anim] YA existente en style.css (no se duplica aquí);
+   esto solo define su apariencia. Reutiliza las variables --ap-* de
+   arriba para mantener la misma paleta que el resto del minijuego.
+   ========================================================================== */
+
+.surprise-piano-card {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin-top: 1.6rem;
+  padding: 22px 26px 24px;
+  width: min(320px, 84vw);
+  border-radius: 26px;
+  font-family: "Jost", sans-serif;
+  background: linear-gradient(180deg, rgba(74, 47, 122, 0.22) 0%, rgba(10, 11, 22, 0.32) 100%);
+  border: 1px solid rgba(255, 215, 106, 0.22);
+  box-shadow: 0 0 0 1px rgba(255, 215, 106, 0.08), 0 18px 46px rgba(0, 0, 0, 0.35),
+    0 0 40px rgba(122, 76, 200, 0.18);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.surprise-piano-card-icon {
+  font-size: 30px;
+  line-height: 1;
+  margin-bottom: 2px;
+  filter: drop-shadow(0 0 14px rgba(255, 215, 106, 0.55));
+  animation: ap-launcher-float 3.2s ease-in-out infinite;
+}
+
+.surprise-piano-card-title {
+  font-family: "Press Start 2P", monospace;
+  font-size: 13px;
+  letter-spacing: 0.5px;
+  color: var(--ap-gold-strong);
+  text-shadow: 0 0 14px rgba(255, 215, 106, 0.5);
+  margin: 2px 0 0;
+}
+
+.surprise-piano-card-tagline {
+  font-size: 13px;
+  color: rgba(244, 233, 255, 0.75);
+  margin: 0 0 14px;
+}
+
+.surprise-piano-card-btn {
+  font-family: "Press Start 2P", monospace;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  color: #241536;
+  background: linear-gradient(180deg, var(--ap-gold-strong), var(--ap-gold));
+  border: none;
+  border-radius: 999px;
+  padding: 13px 26px;
+  cursor: pointer;
+  box-shadow: 0 6px 18px rgba(255, 215, 106, 0.35);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  min-height: 44px;
+}
+
+.surprise-piano-card-btn:hover,
+.surprise-piano-card-btn:focus-visible {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(255, 215, 106, 0.45);
+}
+
+@keyframes ap-launcher-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+@media (max-width: 420px) {
+  .surprise-piano-card {
+    padding: 18px 20px 20px;
+    border-radius: 22px;
+    margin-top: 1.25rem;
+  }
+  .surprise-piano-card-title { font-size: 12px; }
+  .surprise-piano-card-tagline { font-size: 12px; margin-bottom: 12px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .surprise-piano-card-icon { animation: none; }
 }
