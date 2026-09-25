@@ -552,6 +552,26 @@
   }
 
   /* ------------------------------------------------------------------ */
+  /* 7.1) AYUDAS PARA MÓVIL                                              */
+  /* ------------------------------------------------------------------ */
+
+  function handleOrientationChange() {
+    // El viewport móvil tarda un instante en asentarse tras rotar; se
+    // mide una vez de inmediato y otra vez un poco después, por si acaso.
+    measureLaneMetrics();
+    window.setTimeout(measureLaneMetrics, 250);
+  }
+
+  function preventBackgroundScroll(event) {
+    // Solo bloquea el arrastre sobre el fondo oscuro del modal (fuera de
+    // los carriles, que ya usan touch-action:none y necesitan sus propios
+    // eventos de toque para jugar).
+    if (event.target === els.overlay || event.target === els.modal) {
+      event.preventDefault();
+    }
+  }
+
+  /* ------------------------------------------------------------------ */
   /* 8) API PÚBLICA: open / close / start / reset                        */
   /* ------------------------------------------------------------------ */
 
@@ -569,6 +589,14 @@
 
     document.addEventListener("keydown", onKeyDown);
     window.addEventListener("resize", measureLaneMetrics);
+    // orientationchange (girar el teléfono) no siempre dispara "resize" a
+    // tiempo en todos los navegadores móviles; se recalcula aparte, con un
+    // pequeño margen para que el viewport termine de asentarse.
+    window.addEventListener("orientationchange", handleOrientationChange);
+    // Evita que un arrastre sobre el fondo oscuro del modal "jale" y
+    // rebote la página de Amaris World detrás (efecto rubber-band de
+    // iOS Safari). Los carriles siguen recibiendo su propio touch-action.
+    els.overlay.addEventListener("touchmove", preventBackgroundScroll, { passive: false });
 
     window.setTimeout(function () {
       els.startBtn.focus();
@@ -587,6 +615,8 @@
     document.documentElement.style.overflow = state.previousHtmlOverflow || "";
     document.removeEventListener("keydown", onKeyDown);
     window.removeEventListener("resize", measureLaneMetrics);
+    window.removeEventListener("orientationchange", handleOrientationChange);
+    els.overlay.removeEventListener("touchmove", preventBackgroundScroll);
 
     showScreen("start");
 

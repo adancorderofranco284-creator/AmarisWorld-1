@@ -34,6 +34,10 @@
   pointer-events: none;
   transition: opacity 0.25s ease;
   font-family: "Jost", sans-serif;
+  /* Evita el "rebote" de scroll de iOS Safari detrás del modal y el
+     resaltado azul al tocar. */
+  overscroll-behavior: contain;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .amaris-piano-overlay.is-open {
@@ -47,6 +51,7 @@
   width: min(480px, 94vw);
   height: min(760px, 92dvh);
   border-radius: 22px;
+  touch-action: pan-x pan-y; /* respaldo; los carriles internos usan touch-action: none */
   background: linear-gradient(180deg, #1a1330 0%, #120d22 55%, #0a0b16 100%);
   border: 1px solid rgba(255, 215, 106, 0.25);
   box-shadow: 0 0 0 1px rgba(255, 143, 214, 0.08), 0 30px 80px rgba(0, 0, 0, 0.55),
@@ -423,7 +428,81 @@
   justify-content: center;
 }
 
-/* ---- Responsive ---------------------------------------------------------- */
+/* ---- Responsive: teléfonos --------------------------------------------- */
+
+/* Botones y carriles: objetivos táctiles cómodos (mín. ~44px, guía Apple/Android)
+   y sin resaltado azul al tocar, en cualquier tamaño de pantalla. */
+.amaris-piano-btn,
+.amaris-piano-close,
+.amaris-piano-lane {
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+.amaris-piano-btn {
+  min-height: 46px;
+}
+
+@media (max-width: 600px) {
+  /* En teléfonos el juego ocupa toda la pantalla: más área de juego,
+     carriles más anchos y fáciles de tocar con el pulgar. */
+  .amaris-piano-overlay {
+    padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+      env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+  }
+
+  .amaris-piano-modal {
+    width: 100vw;
+    height: 100dvh;
+    height: -webkit-fill-available;
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+  }
+
+  .amaris-piano-screen--start,
+  .amaris-piano-screen--end {
+    padding: 24px 18px;
+  }
+
+  .amaris-piano-screen--game {
+    padding: calc(env(safe-area-inset-top, 0px) + 10px) 8px calc(env(safe-area-inset-bottom, 0px) + 8px);
+  }
+
+  .amaris-piano-hud {
+    padding: 2px 6px 12px;
+  }
+
+  .amaris-piano-lanes {
+    gap: 4px;
+  }
+
+  .amaris-piano-close {
+    top: calc(env(safe-area-inset-top, 0px) + 10px);
+    right: calc(env(safe-area-inset-right, 0px) + 10px);
+    width: 40px;
+    height: 40px;
+  }
+
+  .amaris-piano-btn {
+    width: 100%;
+    max-width: 280px;
+    padding: 15px 24px;
+  }
+
+  .amaris-piano-end-actions {
+    flex-direction: column;
+    width: 100%;
+    align-items: center;
+  }
+}
+
+@media (max-width: 420px) {
+  :root {
+    --ap-note-size: 50px;
+    --ap-hitline-offset: 82px;
+  }
+}
 
 @media (max-width: 380px) {
   :root {
@@ -432,6 +511,26 @@
   }
   .amaris-piano-eyebrow { font-size: 13px; }
   .amaris-piano-hud-value { font-size: 15px; }
+}
+
+/* Teléfono en horizontal: la altura manda, no el ancho — hay que achicar
+   todo verticalmente para que los 4 carriles y la línea sigan visibles. */
+@media (max-height: 420px) and (orientation: landscape) {
+  :root {
+    --ap-note-size: 40px;
+    --ap-hitline-offset: 56px;
+  }
+  .amaris-piano-modal {
+    height: 100dvh;
+    height: -webkit-fill-available;
+  }
+  .amaris-piano-eyebrow { font-size: 12px; margin-bottom: 2px; }
+  .amaris-piano-tagline { font-size: 14px; }
+  .amaris-piano-subtagline { font-size: 11px; margin-bottom: 10px; }
+  .amaris-piano-hud { padding: 2px 6px 6px; }
+  .amaris-piano-hud-value { font-size: 13px; }
+  .amaris-piano-btn { padding: 10px 22px; font-size: 10px; min-height: 40px; }
+  .amaris-piano-results { padding: 12px; margin: 6px 0 12px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
