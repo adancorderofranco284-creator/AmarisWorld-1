@@ -139,6 +139,15 @@
   gap: 10px;
 }
 
+/* CRÍTICO: .amaris-piano-screen y [hidden] tienen la MISMA especificidad
+   (0-1-0), así que sin esta regla el "display:flex" de arriba le gana al
+   "display:none" nativo del atributo hidden, y las 3 pantallas (inicio,
+   juego, resultados) terminan mostrándose al mismo tiempo. Esta regla,
+   con mayor especificidad (0-2-0), garantiza que hidden SIEMPRE gane. */
+.amaris-piano-screen[hidden] {
+  display: none !important;
+}
+
 /* La pantalla de juego ya no reserva márgenes: los carriles deben ocupar
    casi todo el "teléfono", con el HUD flotando encima como overlay. */
 .amaris-piano-screen--game {

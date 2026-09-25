@@ -507,18 +507,29 @@
 
   function startGame() {
     buildDOM();
-    measureLaneMetrics();
 
-    state.gameStartTime = performance.now();
-    state.lastSpawnTime = state.gameStartTime;
-    state.nextSpawnIn = CONFIG.spawnInterval.min;
-    state.chartIndex = 0;
-
+    // 1) Mostrar la pantalla de juego PRIMERO. Medir el layout (paso 3)
+    //    mientras la pantalla sigue con display:none siempre da 0 —
+    //    por eso measureLaneMetrics() se movió después de showScreen().
     showScreen("playing");
     updateHUD();
 
+    // 2) Esperar a que el navegador pinte ese cambio (un frame) antes de
+    //    calcular dimensiones reales.
     window.cancelAnimationFrame(state.rafId);
-    state.rafId = window.requestAnimationFrame(tick);
+    window.requestAnimationFrame(function () {
+      // 3) Calcular dimensiones reales / 4) posición de la línea de precisión
+      measureLaneMetrics();
+
+      // 5) Inicializar el reloj de la partida y las notas
+      state.gameStartTime = performance.now();
+      state.lastSpawnTime = state.gameStartTime;
+      state.nextSpawnIn = CONFIG.spawnInterval.min;
+      state.chartIndex = 0;
+
+      // 6) Iniciar requestAnimationFrame → 7) comienza el juego
+      state.rafId = window.requestAnimationFrame(tick);
+    });
   }
 
   function endGame() {
