@@ -439,6 +439,34 @@
   transform: scale(0.85) translateY(6px);
 }
 
+/* ---- Golpe de acierto (cambio a la foto "hit") -------------------------- */
+/* Se dispara junto con is-judged/is-perfect/is-great, sobre el MISMO
+   elemento de la nota (no crea nada nuevo): un pequeño "pop" de escala +
+   flash de brillo en la imagen y en el glow, justo cuando aparece la
+   imagen 2. Dura ~220ms, dentro de la ventana en la que la nota sigue
+   visible antes de desvanecerse (is-judged). */
+
+.amaris-piano-note.is-hit .amaris-piano-note-img {
+  animation: ap-hit-pop 0.22s ease-out;
+  box-shadow: 0 0 32px 6px rgba(255, 215, 106, 1), 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+.amaris-piano-note.is-hit .amaris-piano-note-glow {
+  animation: ap-hit-glow 0.26s ease-out;
+}
+
+@keyframes ap-hit-pop {
+  0% { transform: scale(1); filter: brightness(1); }
+  35% { transform: scale(1.24); filter: brightness(1.4); }
+  100% { transform: scale(1.08); filter: brightness(1.05); }
+}
+
+@keyframes ap-hit-glow {
+  0% { opacity: 1; transform: scale(1); }
+  40% { opacity: 1; transform: scale(1.7); }
+  100% { opacity: 0.55; transform: scale(1.25); }
+}
+
 /* ---- Explosión de partículas al acertar -------------------------------- */
 
 .amaris-piano-burst {
@@ -603,4 +631,6 @@
   .amaris-piano-bgstar { animation: none; opacity: 0.4; }
   .amaris-piano-burst { animation: none; opacity: 0; }
   .amaris-piano-hitline { animation: none; }
+  .amaris-piano-note.is-hit .amaris-piano-note-img,
+  .amaris-piano-note.is-hit .amaris-piano-note-glow { animation: none; }
 }

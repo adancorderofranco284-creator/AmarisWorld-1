@@ -28,9 +28,13 @@
   // 🧑‍🤝‍🧑 Agrega o quita amigos modificando SOLO este arreglo.
   // Las imágenes van en assets/friends/. Si una no carga, el juego usa
   // automáticamente un avatar de respaldo (inicial + color), sin romperse.
+  // Cada amigo puede tener una "hitImage": la foto que reemplaza a la
+  // normal justo cuando el jugador acierta esa nota. Es opcional — si un
+  // amigo no tiene hitImage, su nota simplemente no cambia de imagen al
+  // acertar (se comporta exactamente igual que antes).
   var FRIENDS = [
     { id: "amaris", name: "Amaris", image: "assets/friends/amaris.webp" },
-    { id: "amigo1", name: "Amigo 1", image: "assets/friends/amigo1.webp" },
+    { id: "amigo1", name: "Amigo 1", image: "assets/friends/amigo1.webp", hitImage: "assets/friends/amigo1-hit.webp" },
     { id: "amigo2", name: "Amigo 2", image: "assets/friends/amigo2.webp" },
     { id: "amigo3", name: "Amigo 3", image: "assets/friends/amigo3.webp" },
     { id: "amigo4", name: "Amigo 4", image: "assets/friends/amigo4.webp" }
@@ -230,7 +234,21 @@
     els.finalCombo = overlay.querySelector("#apFinalCombo");
 
     bindStaticEvents();
+    preloadHitImages();
     state.built = true;
+  }
+
+  // Precarga en segundo plano las imágenes de "acierto" de cada amigo, para
+  // que el cambio de foto al acertar sea instantáneo (sin esperar a que la
+  // imagen se descargue justo en el momento del golpe). Si una hitImage no
+  // existe o falla, no rompe nada: simplemente no se precachea.
+  function preloadHitImages() {
+    FRIENDS.forEach(function (friend) {
+      if (friend.hitImage) {
+        var pre = new Image();
+        pre.src = friend.hitImage;
+      }
+    });
   }
 
   /* ------------------------------------------------------------------ */
@@ -313,10 +331,18 @@
     img.draggable = false;
     img.src = friend.image;
     img.addEventListener("error", function () {
+      // Si el error ocurre DESPUÉS de acertar (falló la hitImage, no la
+      // imagen normal), no destruimos la nota con el avatar de iniciales:
+      // simplemente nos quedamos mostrando la imagen normal, que ya se
+      // había cargado bien.
+      if (wrap.dataset.apHit === "1") {
+        img.src = friend.image;
+        return;
+      }
       wrap.classList.add("amaris-piano-note--fallback");
       var colorIdx = Math.abs(hashString(friend.id || friend.name || "?")) % CONFIG.friendAvatarColors.length;
       wrap.style.setProperty("--ap-fallback-color", CONFIG.friendAvatarColors[colorIdx]);
-      wrap.removeChild(img);
+      if (img.parentNode) wrap.removeChild(img);
       var initial = document.createElement("span");
       initial.className = "amaris-piano-note-initial";
       initial.textContent = (friend.name || "?").trim().charAt(0).toUpperCase();
@@ -337,9 +363,11 @@
   }
 
   function spawnNote(lane, friendIndex, spawnAtMs) {
+    var friend = FRIENDS[friendIndex % FRIENDS.length] || null;
     var note = {
       id: ++noteIdSeq,
       lane: lane,
+      friend: friend,
       spawnTime: spawnAtMs,
       hitTime: spawnAtMs + CONFIG.fallDuration,
       judged: false,
@@ -398,10 +426,31 @@
     }, 420);
   }
 
+  // Cambia la <img> de la nota a la foto de "acierto" del amigo, SIN crear
+  // ni duplicar ningún elemento: es la misma nota, mismo <img>, solo cambia
+  // su src. Si ese amigo no tiene hitImage configurada, no hace nada y la
+  // nota conserva su imagen normal (comportamiento previo intacto).
+  function showHitImage(note) {
+    var friend = note.friend;
+    if (!friend || !friend.hitImage) return;
+
+    var img = note.el.querySelector(".amaris-piano-note-img");
+    if (!img) return; // ya cayó al avatar de iniciales antes de acertar
+
+    note.el.dataset.apHit = "1";
+    img.src = friend.hitImage;
+  }
+
   function judgeNote(note, kind) {
     note.judged = true;
-    note.el.classList.add("is-judged", "is-" + kind);
     var laneEl = els.lanes[note.lane];
+
+    if (kind === "perfect" || kind === "great") {
+      showHitImage(note);
+      note.el.classList.add("is-hit");
+    }
+
+    note.el.classList.add("is-judged", "is-" + kind);
 
     if (kind === "perfect" || kind === "great") {
       state.combo += 1;
