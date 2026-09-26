@@ -13,11 +13,31 @@
 
    Extra (no rompe la API pedida, solo la complementa):
      window.AmarisPiano.setChart(chart) → usa un chart fijo en vez de
-       generación automática. chart = [{ time, lane, friend }, ...]
-       time en ms desde el inicio de la partida. Tiene prioridad sobre
-       cualquier chart definido dentro de PIANO_SONGS (ver abajo).
+       generación automática. chart = [{ time, lane, friend, type,
+       duration }, ...], time en ms desde el inicio de LA CANCIÓN (no de
+       la partida: el reloj de juego usa audio.currentTime como
+       referencia mientras la música suena). type es "tap" (por defecto,
+       basta un toque) o "hold" (hay que mantener presionado "duration"
+       ms). Tiene prioridad sobre cualquier chart definido dentro de
+       PIANO_SONGS (ver abajo). Ejemplo:
+         [{ time: 800, lane: 0, friend: 0, type: "tap" },
+          { time: 1600, lane: 2, friend: 1, type: "hold", duration: 1000 }]
      window.AmarisPiano.setSong(id) → cambia la canción activa antes de
-       abrir/empezar la partida. id debe existir en PIANO_SONGS.
+       abrir/empezar la partida. id debe existir en PIANO_SONGS. También
+       hay un pequeño selector de canciones en la pantalla de inicio
+       (si hay más de una en PIANO_SONGS) que llama a esto mismo.
+
+   TOQUE / TAP / HOLD:
+     Una nota puede tocarse (Pointer Events: pointerdown/up/cancel, mouse,
+     touch, stylus, y teclado 1-4) desde el instante en que aparece en
+     pantalla, no solo cuando llega a la línea de golpe — el juego mide
+     qué tan cerca está el toque del "hitTime" de la nota (ventana
+     PERFECT/GREAT configurable en CONFIG.hitWindow), sin importar dónde
+     esté visualmente cayendo. Tocar demasiado pronto no destruye la
+     nota: solo muestra "EARLY" y se puede volver a intentar. Las notas
+     "hold" se inician al tocar y se completan manteniendo el dedo/tecla
+     hasta el final de su duración; soltar antes de tiempo cuenta MISS.
+     Varios dedos pueden sostener/tocar notas distintas a la vez.
 
    PUNTO DE ENTRADA (SORPRESA):
      Este módulo también engancha, si existe en el DOM, el botón
@@ -73,23 +93,25 @@
   //
   // "chart" es OPCIONAL por canción: si lo defines, esa canción usa esas
   // notas sincronizadas en vez de la generación automática. Formato
-  // idéntico al de setChart(): [{ time, lane, friend }, ...] en ms desde
-  // el inicio de la canción.
+  // idéntico al de setChart(): [{ time, lane, friend, type, duration }, ...]
+  // en ms desde el inicio de la canción. "type" es opcional ("tap" por
+  // defecto); "duration" (ms) solo aplica a type:"hold". Sin chart, el
+  // juego sigue generando notas automáticamente como antes.
   var PIANO_SONGS = [
     { id: "piano-theme", name: "Piano Theme", file: "assets/piano-music/piano-theme.mp3" },
     { id: "song1", name: "Song 1", file: "assets/piano-music/song1.mp3" }
     // Ejemplo para agregar más:
     // { id: "cancion-amaris", name: "Canción de Amaris", file: "assets/piano-music/cancion-amaris.mp3" }
-    // Ejemplo con chart sincronizado propio:
+    // Ejemplo con chart sincronizado propio (tap y hold mezclados):
     // {
     //   id: "song2",
     //   name: "Song 2",
     //   file: "assets/piano-music/song2.mp3",
     //   chart: [
-    //     { time: 1000, lane: 0, friend: 0 },
-    //     { time: 1500, lane: 1, friend: 1 },
-    //     { time: 2000, lane: 2, friend: 0 },
-    //     { time: 2500, lane: 3, friend: 2 }
+    //     { time: 1000, lane: 0, friend: 0, type: "tap" },
+    //     { time: 1500, lane: 1, friend: 1, type: "tap" },
+    //     { time: 2000, lane: 2, friend: 0, type: "hold", duration: 1200 },
+    //     { time: 3400, lane: 3, friend: 2, type: "tap" }
     //   ]
     // }
   ];
@@ -112,7 +134,10 @@
     fallDuration: 2200, // ms que tarda una nota en caer desde arriba hasta la línea
     spawnInterval: { min: 650, max: 950 }, // ms entre notas cuando se auto-genera
     gameDuration: 45000, // ms de partida cuando se auto-genera (sin chart)
-    hitWindow: { perfect: 70, great: 140 }, // ms, configurable
+    // Ventana temporal para juzgar un toque, medida contra hitTime (el
+    // "momento musical" de la nota) sin importar en qué punto de su
+    // caída se encuentre visualmente la nota en pantalla.
+    hitWindow: { perfect: 100, great: 200 },
     scoring: { perfect: 100, great: 50 },
     // Frecuencias (Hz) por carril: C4 D4 E4 G4 — sonido simple de piano.
     noteFrequencies: [261.63, 293.66, 329.63, 392.0],
@@ -141,15 +166,23 @@
     perfectCount: 0,
     greatCount: 0,
     missCount: 0,
-    laneMetrics: null, // { travelPx } recalculado por carril
+    laneMetrics: null, // { travelBase, tapHeightPx, pxPerMs } recalculado por carril
     previousActiveElement: null,
     previousHtmlOverflow: "",
+    pressedKeys: {}, // lane(idx) -> bool, evita que el auto-repeat de keydown re-dispare el toque
 
     // ---- Música de la partida (independiente del reproductor principal) --
     activeSongId: null, // fijado con AmarisPiano.setSong(); si es null, se usa DEFAULT_SONG_ID
     songAudio: null, // <audio> propio del piano, creado bajo demanda
     songAudioFailed: false, // true si la canción actual no pudo cargar/reproducirse
-    mainAudioWasPlaying: false // si #bgAudio (Amaris World) sonaba antes de abrir el piano
+    mainAudioWasPlaying: false, // si #bgAudio (Amaris World) sonaba antes de abrir el piano
+
+    // ---- Análisis de energía del audio (SOLO para modular la generación
+    // automática cuando una canción no trae "chart"). Si el navegador no
+    // lo soporta o falla (p. ej. CORS en file://), simplemente se ignora
+    // y el auto-generador sigue funcionando igual que antes.
+    songAnalyser: null,
+    songAnalyserData: null
   };
 
   var els = {}; // referencias DOM, pobladas en buildDOM()
@@ -226,6 +259,59 @@
     } catch (e) {
       /* algunos navegadores lanzan si el audio nunca llegó a cargar; se ignora */
     }
+  }
+
+  // Reloj UNIFICADO de la partida: mientras la canción de esta partida
+  // esté sonando, el audio ES el reloj (audio.currentTime), tal como pide
+  // el punto 11 — así las notas (definidas en ms desde el inicio de la
+  // canción) quedan siempre sincronizadas con lo que se escucha, incluso
+  // si el audio se atrasa/adelanta un poco por buffering. Si no hay
+  // canción activa o falló, se usa performance.now() como respaldo (el
+  // comportamiento de siempre), para que el juego NUNCA se quede
+  // congelado por falta de audio.
+  function getElapsedMs() {
+    if (state.songAudio && !state.songAudioFailed && !state.songAudio.paused) {
+      var t = state.songAudio.currentTime;
+      if (!isNaN(t)) return t * 1000;
+    }
+    return performance.now() - state.gameStartTime;
+  }
+
+  // Engancha un AnalyserNode al <audio> de la canción para poder leer su
+  // energía en tiempo real (0..1) y usarla SOLO para modular el generador
+  // automático de notas (más energía → notas un poco más seguidas / más
+  // holds). No sustituye al chart manual, que siempre tiene prioridad.
+  // Totalmente opcional y defensivo: createMediaElementSource() solo se
+  // puede llamar UNA vez por <audio>, y puede fallar por CORS si el mp3
+  // se sirve desde file:// — en ambos casos simplemente se desactiva.
+  function ensureSongAnalyser() {
+    if (state.songAnalyser) return state.songAnalyser;
+    if (!state.songAudio) return null;
+    if (state.songAudio.dataset.apAnalyserAttached === "1") return null; // ya se intentó antes, no reintentar
+    var ctx = ensureAudioContext();
+    if (!ctx) return null;
+    try {
+      var source = ctx.createMediaElementSource(state.songAudio);
+      var analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      source.connect(analyser);
+      analyser.connect(ctx.destination); // sin esto, el audio se silenciaría
+      state.songAnalyser = analyser;
+      state.songAnalyserData = new Uint8Array(analyser.frequencyBinCount);
+    } catch (e) {
+      state.songAnalyser = null; // p. ej. CORS: seguimos sin análisis, sin romper nada
+    }
+    state.songAudio.dataset.apAnalyserAttached = "1";
+    return state.songAnalyser;
+  }
+
+  // Energía promedio actual (0..1) o null si el análisis no está disponible.
+  function getAudioEnergy() {
+    if (!state.songAnalyser || !state.songAnalyserData) return null;
+    state.songAnalyser.getByteFrequencyData(state.songAnalyserData);
+    var sum = 0;
+    for (var i = 0; i < state.songAnalyserData.length; i++) sum += state.songAnalyserData[i];
+    return sum / state.songAnalyserData.length / 255;
   }
 
   // Selecciona la canción activa, la carga (si hace falta) y la reproduce.
@@ -348,6 +434,7 @@
       '    <p class="amaris-piano-eyebrow">🎹 AMARIS PIANO</p>' +
       '    <p class="amaris-piano-tagline">Toca las caras al ritmo</p>' +
       '    <p class="amaris-piano-subtagline">¡No las dejes pasar!</p>' +
+      '    <div class="amaris-piano-songlist" id="apSongList" hidden aria-label="Elegir canción"></div>' +
       '    <button type="button" class="amaris-piano-btn" id="apStartBtn">COMENZAR</button>' +
       "  </section>" +
 
@@ -415,6 +502,7 @@
     els.closeX = overlay.querySelector("#apCloseX");
     els.startScreen = overlay.querySelector("#apStartScreen");
     els.startBtn = overlay.querySelector("#apStartBtn");
+    els.songList = overlay.querySelector("#apSongList");
     els.gameScreen = overlay.querySelector("#apGameScreen");
     els.endScreen = overlay.querySelector("#apEndScreen");
     els.score = overlay.querySelector("#apScore");
@@ -433,7 +521,36 @@
 
     bindStaticEvents();
     preloadHitImages();
+    renderSongList();
     state.built = true;
+  }
+
+  // 🎵 Selector de canciones en la pantalla de inicio. Solo se muestra si
+  // hay más de una canción en PIANO_SONGS (con una sola, no aporta nada y
+  // se mantiene oculto). Elegir una llama internamente a la misma
+  // AmarisPiano.setSong() ya existente, así que setSong() sigue
+  // funcionando igual para quien la use desde fuera.
+  function renderSongList() {
+    if (!els.songList) return;
+    if (PIANO_SONGS.length < 2) {
+      els.songList.hidden = true;
+      return;
+    }
+    els.songList.hidden = false;
+    els.songList.innerHTML = "";
+    var activeId = state.activeSongId || DEFAULT_SONG_ID;
+    PIANO_SONGS.forEach(function (song) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "amaris-piano-song-btn";
+      if (song.id === activeId) btn.classList.add("is-active");
+      btn.textContent = song.name || song.id;
+      btn.addEventListener("click", function () {
+        state.activeSongId = song.id;
+        renderSongList();
+      });
+      els.songList.appendChild(btn);
+    });
   }
 
   // Precarga en segundo plano las imágenes de "acierto" de cada amigo, para
@@ -471,13 +588,36 @@
       if (event.target === els.overlay) closeGame();
     });
 
-    // Carriles: pointer events + touch-action:none (definido en CSS) para
-    // que el toque no cause scroll y no requiera tocar exactamente la cara.
+    // Carriles: Pointer Events completos (no solo "click"/pointerdown),
+    // para soportar TAP y HOLD con varios dedos a la vez. Cada carril
+    // captura su propio pointerId al bajar el dedo (setPointerCapture),
+    // así el pointerup/pointercancel de ESE dedo sigue llegando a este
+    // mismo carril aunque el dedo se mueva un poco fuera de él — clave
+    // para que un HOLD no se pierda por un pequeño deslizamiento.
     els.lanes.forEach(function (laneEl) {
       laneEl.addEventListener("pointerdown", function (event) {
         event.preventDefault();
+        try {
+          laneEl.setPointerCapture(event.pointerId);
+        } catch (e) {
+          /* algunos navegadores/tipos de puntero no soportan capture; se ignora */
+        }
         var lane = Number(laneEl.dataset.lane);
-        handleLaneHit(lane);
+        handleLaneHit(lane, event.pointerId);
+      });
+      laneEl.addEventListener("pointerup", function (event) {
+        event.preventDefault();
+        releaseHold(event.pointerId, false);
+      });
+      laneEl.addEventListener("pointercancel", function (event) {
+        releaseHold(event.pointerId, true);
+      });
+      // Resguardo extra para navegadores donde pointer capture no evita
+      // el "pointerleave": releaseHold() es idempotente (no pasa nada si
+      // ese pointerId no estaba sosteniendo ningún HOLD), así que no hay
+      // riesgo de cortar un HOLD válido por accidente.
+      laneEl.addEventListener("pointerleave", function (event) {
+        releaseHold(event.pointerId, true);
       });
     });
   }
@@ -487,13 +627,27 @@
       var idx = CONFIG.laneKeys.indexOf(event.key);
       if (idx !== -1) {
         event.preventDefault();
-        handleLaneHit(idx);
+        // Evita que el auto-repeat de keydown (tecla mantenida) dispare
+        // handleLaneHit() una y otra vez — un HOLD ya en curso se
+        // mantiene con la propia tecla física presionada, no repitiendo.
+        if (!state.pressedKeys[idx]) {
+          state.pressedKeys[idx] = true;
+          handleLaneHit(idx, "key" + idx);
+        }
         return;
       }
     }
     if (event.key === "Escape") {
       event.preventDefault();
       closeGame();
+    }
+  }
+
+  function onKeyUp(event) {
+    var idx = CONFIG.laneKeys.indexOf(event.key);
+    if (idx !== -1) {
+      state.pressedKeys[idx] = false;
+      releaseHold("key" + idx, false);
     }
   }
 
@@ -508,23 +662,26 @@
   function measureLaneMetrics() {
     var wrapRect = els.lanesWrap.getBoundingClientRect();
     var hitRect = els.hitline.getBoundingClientRect();
-    // La nota ahora es una tecla rectangular (más alta que ancha), así que
-    // centramos verticalmente usando su ALTURA real (--ap-note-height),
-    // leída directamente del CSS en vez de un número fijo, para que
-    // funcione igual en cualquier breakpoint.
-    var noteSize = parseFloat(
-      getComputedStyle(els.lanesWrap).getPropertyValue("--ap-note-height")
-    );
-    if (!noteSize || isNaN(noteSize)) noteSize = 95; // resguardo si el navegador no expone la variable
-    var travelPx = hitRect.top - wrapRect.top - noteSize * 0.5;
-    if (travelPx < 40) travelPx = 40; // resguardo en pantallas muy pequeñas
-    state.laneMetrics = { travelPx: travelPx };
+    // Distancia base del contenedor de carriles hasta la línea de golpe.
+    // Cada nota calcula su propio recorrido a partir de esto y de su
+    // propia altura (las HOLD son más altas que las TAP), para que el
+    // borde inferior de CUALQUIER tecla llegue exactamente a la línea en
+    // su hitTime, sin importar cuánto mida.
+    var travelBase = hitRect.top - wrapRect.top;
+    if (travelBase < 80) travelBase = 80; // resguardo en pantallas muy pequeñas
+    var tapHeightPx = parseFloat(getComputedStyle(els.lanesWrap).getPropertyValue("--ap-note-height"));
+    if (!tapHeightPx || isNaN(tapHeightPx)) tapHeightPx = 95; // resguardo si el navegador no expone la variable
+    state.laneMetrics = {
+      travelBase: travelBase,
+      tapHeightPx: tapHeightPx,
+      pxPerMs: travelBase / CONFIG.fallDuration
+    };
   }
 
-  function createNoteElement(friendIndex) {
+  function createNoteElement(friendIndex, type) {
     var friend = FRIENDS[friendIndex % FRIENDS.length] || { name: "?", image: "" };
     var wrap = document.createElement("div");
-    wrap.className = "amaris-piano-note";
+    wrap.className = "amaris-piano-note " + (type === "hold" ? "amaris-piano-note--hold" : "amaris-piano-note--tap");
 
     // Trail sutil detrás de la nota mientras cae (puramente decorativo).
     var trail = document.createElement("span");
@@ -578,31 +735,67 @@
     return hash;
   }
 
-  function spawnNote(lane, friendIndex, spawnAtMs) {
+  // hitAtMs es el "momento musical" de la nota (mismo dominio que
+  // audio.currentTime*1000, o que el reloj de respaldo si no hay canción).
+  // spawnTime se deriva de ahí (punto 16): la nota simplemente aparece
+  // "fallDuration" ms antes de su hitTime.
+  //
+  // type: "tap" (por defecto) o "hold". Para "hold", durationMs es cuánto
+  // hay que mantener presionado; la tecla se dibuja más larga en
+  // proporción a esa duración (misma velocidad de caída que las TAP, así
+  // nunca se desincroniza del audio: no es una animación CSS aparte).
+  function spawnNote(lane, friendIndex, hitAtMs, type, durationMs) {
+    type = type === "hold" ? "hold" : "tap";
+    durationMs = type === "hold" ? Math.max(300, durationMs || 0) : 0;
+
     var friend = FRIENDS[friendIndex % FRIENDS.length] || null;
+    var metrics = state.laneMetrics || { travelBase: 300, tapHeightPx: 95, pxPerMs: 300 / CONFIG.fallDuration };
+    var heightPx = type === "hold" ? Math.max(metrics.tapHeightPx, durationMs * metrics.pxPerMs) : metrics.tapHeightPx;
+    var travelPx = Math.max(40, metrics.travelBase - heightPx);
+
+    var el = createNoteElement(friendIndex, type);
+    if (type === "hold") el.style.height = heightPx.toFixed(1) + "px";
+
     var note = {
       id: ++noteIdSeq,
       lane: lane,
       friend: friend,
-      spawnTime: spawnAtMs,
-      hitTime: spawnAtMs + CONFIG.fallDuration,
+      type: type,
+      duration: durationMs,
+      spawnTime: hitAtMs - CONFIG.fallDuration,
+      hitTime: hitAtMs,
       judged: false,
-      el: createNoteElement(friendIndex)
+      holdActive: false, // true mientras algún dedo/tecla sostiene esta nota HOLD
+      holdPointerId: null, // pointerId (o "key0".."key3") que la está sosteniendo
+      holdDeadline: hitAtMs + durationMs,
+      travelPx: travelPx,
+      el: el
     };
-    els.lanes[lane].appendChild(note.el);
+    els.lanes[lane].appendChild(el);
     state.notes.push(note);
   }
 
-  function spawnFromAutoGenerator(nowMs) {
+  function spawnFromAutoGenerator(elapsedMs) {
     if (state.chart) return; // si hay chart fijo, no se auto-genera
-    if (nowMs - state.gameStartTime >= CONFIG.gameDuration) return; // ya no toca generar más
+    if (elapsedMs >= CONFIG.gameDuration) return; // ya no toca generar más
 
-    if (nowMs >= state.lastSpawnTime + state.nextSpawnIn) {
+    if (elapsedMs >= state.lastSpawnTime + state.nextSpawnIn) {
       var lane = Math.floor(Math.random() * CONFIG.lanes);
-      spawnNote(lane, pickFriendIndex(), nowMs);
-      state.lastSpawnTime = nowMs;
+      // Si hay análisis de audio disponible, la energía actual modula:
+      // (a) qué tan seguido caen notas, y (b) la probabilidad de que sea
+      // un HOLD en vez de un TAP — así la generación automática "seguirá"
+      // un poco la música en vez de ser puramente aleatoria (punto 13).
+      // Si no hay análisis (o falló), se comporta exactamente como antes.
+      var energy = getAudioEnergy();
+      var isHold = Math.random() < (energy !== null && energy > 0.55 ? 0.32 : 0.16);
+      var duration = isHold ? 500 + Math.floor(Math.random() * 900) : 0;
+
+      spawnNote(lane, pickFriendIndex(), elapsedMs + CONFIG.fallDuration, isHold ? "hold" : "tap", duration);
+      state.lastSpawnTime = elapsedMs;
+
       var range = CONFIG.spawnInterval.max - CONFIG.spawnInterval.min;
-      state.nextSpawnIn = CONFIG.spawnInterval.min + Math.random() * range;
+      var base = CONFIG.spawnInterval.min + Math.random() * range;
+      state.nextSpawnIn = energy !== null ? base * (1 - energy * 0.35) : base;
     }
   }
 
@@ -613,7 +806,7 @@
       state.chart[state.chartIndex].time <= elapsedMs + CONFIG.fallDuration
     ) {
       var entry = state.chart[state.chartIndex];
-      spawnNote(entry.lane, entry.friend || 0, state.gameStartTime + entry.time);
+      spawnNote(entry.lane, entry.friend || 0, entry.time, entry.type, entry.duration);
       state.chartIndex++;
     }
   }
@@ -684,6 +877,8 @@
 
   function judgeNote(note, kind) {
     note.judged = true;
+    note.holdActive = false;
+    note.el.classList.remove("is-holding");
     var laneEl = els.lanes[note.lane];
 
     if (kind === "perfect" || kind === "great") {
@@ -727,34 +922,106 @@
     }, 180);
   }
 
-  function handleLaneHit(lane) {
-    if (state.screen !== "playing") return;
-    var now = performance.now();
+  // Busca, dentro de un carril, la nota activa (visible y sin juzgar) más
+  // cercana en el tiempo a "ahora" — sin importar en qué punto de su
+  // caída esté visualmente. Es lo que permite tocar una nota apenas
+  // aparece, no solo cuando llega a la línea (puntos 1 y 6).
+  function findActiveNoteInLane(lane, elapsedMs) {
     var best = null;
-    var bestDiff = Infinity;
-
+    var bestAbsDiff = Infinity;
     state.notes.forEach(function (note) {
       if (note.judged || note.lane !== lane) return;
-      var diff = Math.abs(now - note.hitTime);
-      if (diff <= CONFIG.hitWindow.great && diff < bestDiff) {
+      if (note.type === "hold" && note.holdActive) return; // ya la está sosteniendo otro dedo/tecla
+      if (elapsedMs < note.spawnTime) return; // todavía no aparece en pantalla
+      var absDiff = Math.abs(elapsedMs - note.hitTime);
+      if (absDiff < bestAbsDiff) {
         best = note;
-        bestDiff = diff;
+        bestAbsDiff = absDiff;
       }
     });
+    return best;
+  }
 
-    if (!best) return; // toque sin nota cercana: no penaliza, simplemente no pasa nada
+  // pointerId identifica qué dedo (o qué tecla: "key0".."key3") originó el
+  // toque — necesario para poder sostener un HOLD con un dedo mientras
+  // otro dedo toca notas en otro carril (punto 5).
+  function handleLaneHit(lane, pointerId) {
+    if (state.screen !== "playing") return;
+    var elapsed = getElapsedMs();
+    var best = findActiveNoteInLane(lane, elapsed);
+    if (!best) return; // toque sin nota activa en este carril: no penaliza, no pasa nada
 
-    var kind = bestDiff <= CONFIG.hitWindow.perfect ? "perfect" : "great";
+    var diff = elapsed - best.hitTime;
+
+    // Demasiado pronto: NO se destruye la nota, se avisa "EARLY" y queda
+    // activa para poder volver a tocarla cuando entre en la ventana
+    // válida (punto 6, opción preferida por el usuario).
+    if (diff < -CONFIG.hitWindow.great) {
+      showFeedback("EARLY", "early");
+      return;
+    }
+
+    // Demasiado tarde (resguardo: en teoría tick() ya la habría marcado
+    // MISS antes de que esto pudiera ocurrir).
+    if (diff > CONFIG.hitWindow.great) {
+      judgeNote(best, "miss");
+      return;
+    }
+
+    if (best.type === "hold") {
+      best.holdActive = true;
+      best.holdPointerId = pointerId;
+      showHitImage(best);
+      best.el.classList.add("is-holding", "is-hit");
+      flashHitline();
+      playPianoNote(best.lane);
+      if (navigator.vibrate) {
+        try {
+          navigator.vibrate(10);
+        } catch (e) {
+          /* se ignora si el navegador no da permiso */
+        }
+      }
+      return;
+    }
+
+    var kind = Math.abs(diff) <= CONFIG.hitWindow.perfect ? "perfect" : "great";
     judgeNote(best, kind);
   }
 
+  // Soltar el dedo/tecla que sostenía un HOLD. Si se suelta demasiado
+  // pronto (antes de holdDeadline, con un pequeño margen de tolerancia),
+  // el HOLD falla como MISS; si se sostuvo lo suficiente, se completa como
+  // acierto. Es idempotente: si ese pointerId no estaba sosteniendo nada
+  // (o la nota ya fue juzgada), simplemente no hace nada — seguro de
+  // llamar desde varios listeners distintos (pointerup/cancel/leave).
+  function releaseHold(pointerId, isCancel) {
+    var note = null;
+    for (var i = 0; i < state.notes.length; i++) {
+      var n = state.notes[i];
+      if (!n.judged && n.type === "hold" && n.holdActive && n.holdPointerId === pointerId) {
+        note = n;
+        break;
+      }
+    }
+    if (!note) return;
+
+    var elapsed = getElapsedMs();
+    note.holdActive = false;
+
+    if (isCancel || elapsed < note.holdDeadline - CONFIG.hitWindow.great) {
+      judgeNote(note, "miss");
+    } else {
+      judgeNote(note, "perfect");
+    }
+  }
+
   function tick() {
-    var now = performance.now();
+    var elapsed = getElapsedMs();
 
-    spawnFromChart(now - state.gameStartTime);
-    spawnFromAutoGenerator(now);
+    spawnFromChart(elapsed);
+    spawnFromAutoGenerator(elapsed);
 
-    var travelPx = state.laneMetrics ? state.laneMetrics.travelPx : 300;
     var missCutoff = CONFIG.hitWindow.great;
     var allDone = true;
 
@@ -762,20 +1029,30 @@
       if (note.judged) return;
       allDone = false;
 
-      var progress = (now - note.spawnTime) / CONFIG.fallDuration;
-      if (progress > 1) progress = 1 + (now - note.hitTime) / CONFIG.fallDuration;
-      note.el.style.transform = "translateY(" + Math.max(0, progress) * travelPx + "px)";
+      // Misma velocidad de caída siempre (sin acelerar tras la línea):
+      // así una nota HOLD sostenida sigue moviéndose de forma natural y
+      // predecible mientras se mantiene presionada.
+      var progress = (elapsed - note.spawnTime) / CONFIG.fallDuration;
+      note.el.style.transform = "translateY(" + Math.max(0, progress) * note.travelPx + "px)";
 
-      if (now - note.hitTime > missCutoff) {
+      if (note.type === "hold" && note.holdActive) {
+        // Mientras se sostiene, no aplica el corte de MISS por tiempo:
+        // solo importa si se llegó a la duración completa.
+        if (elapsed >= note.holdDeadline) {
+          note.holdActive = false;
+          judgeNote(note, "perfect");
+        }
+        return;
+      }
+
+      if (elapsed - note.hitTime > missCutoff) {
         judgeNote(note, "miss");
-      } else if (now >= note.hitTime - 120) {
+      } else if (elapsed >= note.hitTime - 120) {
         note.el.classList.add("is-near");
       }
     });
 
-    var spawningDone = state.chart
-      ? state.chartIndex >= state.chart.length
-      : now - state.gameStartTime >= CONFIG.gameDuration;
+    var spawningDone = state.chart ? state.chartIndex >= state.chart.length : elapsed >= CONFIG.gameDuration;
 
     if (spawningDone && allDone && state.notes.length === 0) {
       endGame();
@@ -794,6 +1071,9 @@
     els.startScreen.hidden = name !== "start";
     els.gameScreen.hidden = name !== "playing";
     els.endScreen.hidden = name !== "end";
+    // Refresca el resaltado del selector por si setSong() se llamó desde
+    // fuera (API pública) mientras el juego estaba en otra pantalla.
+    if (name === "start") renderSongList();
   }
 
   function startGame() {
@@ -817,11 +1097,16 @@
         // 4) Calcular dimensiones reales / posición de la línea de precisión
         measureLaneMetrics();
 
-        // 5) Inicializar el reloj de la partida y las notas
+        // 5) Inicializar el reloj de la partida y las notas. gameStartTime
+        //    sigue existiendo como respaldo (getElapsedMs() lo usa si no
+        //    hay canción sonando); lastSpawnTime/nextSpawnIn ahora viven
+        //    en el mismo dominio "ms transcurridos" que usa getElapsedMs(),
+        //    así que empiezan en 0, no en performance.now().
         state.gameStartTime = performance.now();
-        state.lastSpawnTime = state.gameStartTime;
+        state.lastSpawnTime = 0;
         state.nextSpawnIn = CONFIG.spawnInterval.min;
         state.chartIndex = 0;
+        state.pressedKeys = {};
 
         // Chart efectivo: el fijado explícitamente con setChart() manda
         // siempre; si no hay ninguno, se usa el de la canción activa (si
@@ -836,6 +1121,15 @@
               return a.time - b.time;
             })
           : null;
+
+        // Análisis de energía del audio (opcional, ver getAudioEnergy):
+        // solo tiene efecto cuando NO hay chart, para modular el
+        // generador automático. Si falla o no es soportado, no pasa nada.
+        try {
+          ensureSongAnalyser();
+        } catch (e) {
+          /* se ignora: el juego sigue funcionando sin análisis de energía */
+        }
 
         // 6) Iniciar requestAnimationFrame → 7) comienza el juego
         state.rafId = window.requestAnimationFrame(tick);
@@ -871,6 +1165,7 @@
     state.greatCount = 0;
     state.missCount = 0;
     state.chartIndex = 0;
+    state.pressedKeys = {};
     updateHUD();
     showScreen("start");
   }
@@ -916,7 +1211,9 @@
     els.overlay.classList.add("is-open");
     showScreen("start");
 
+    state.pressedKeys = {};
     document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("keyup", onKeyUp);
     window.addEventListener("resize", measureLaneMetrics);
     // orientationchange (girar el teléfono) no siempre dispara "resize" a
     // tiempo en todos los navegadores móviles; se recalcula aparte, con un
@@ -949,6 +1246,7 @@
 
     document.documentElement.style.overflow = state.previousHtmlOverflow || "";
     document.removeEventListener("keydown", onKeyDown);
+    document.removeEventListener("keyup", onKeyUp);
     window.removeEventListener("resize", measureLaneMetrics);
     window.removeEventListener("orientationchange", handleOrientationChange);
     els.overlay.removeEventListener("touchmove", preventBackgroundScroll);
@@ -986,13 +1284,15 @@
   };
 
   // Ejemplo de chart (desactivado por defecto: se usa auto-generación).
-  // Para sincronizar con una canción real, descomenta y ajusta tiempos:
+  // Para sincronizar con una canción real, descomenta y ajusta tiempos.
+  // "time" es en ms desde el INICIO DE LA CANCIÓN. type es opcional
+  // ("tap" por defecto); duration solo aplica a type:"hold".
   //
   // window.AmarisPiano.setChart([
-  //   { time: 1000, lane: 0, friend: 0 },
-  //   { time: 1500, lane: 1, friend: 1 },
-  //   { time: 2000, lane: 2, friend: 2 },
-  //   { time: 2500, lane: 3, friend: 3 }
+  //   { time: 1000, lane: 0, friend: 0, type: "tap" },
+  //   { time: 1500, lane: 1, friend: 1, type: "tap" },
+  //   { time: 2000, lane: 2, friend: 2, type: "hold", duration: 1000 },
+  //   { time: 3200, lane: 3, friend: 3, type: "tap" }
   // ]);
 
   /* ------------------------------------------------------------------ */

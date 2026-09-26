@@ -248,6 +248,49 @@
   box-shadow: none;
 }
 
+/* ---- Selector de canciones (pantalla de inicio) ------------------------ */
+/* Solo aparece si hay más de una canción en PIANO_SONGS (ver
+   renderSongList() en piano-game.js); con una sola queda oculto. */
+
+.amaris-piano-songlist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  max-width: 300px;
+  margin: 2px 0 16px;
+}
+
+.amaris-piano-songlist[hidden] {
+  display: none;
+}
+
+.amaris-piano-song-btn {
+  font-family: "Jost", sans-serif;
+  font-size: 12px;
+  color: #f4e9ff;
+  background: rgba(127, 217, 255, 0.1);
+  border: 1px solid rgba(127, 217, 255, 0.35);
+  border-radius: 999px;
+  padding: 7px 14px;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease, color 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+.amaris-piano-song-btn:hover,
+.amaris-piano-song-btn:focus-visible {
+  transform: translateY(-1px);
+  background: rgba(127, 217, 255, 0.2);
+}
+
+.amaris-piano-song-btn.is-active {
+  background: linear-gradient(180deg, var(--ap-gold-strong), var(--ap-gold));
+  color: #241536;
+  border-color: transparent;
+}
+
 /* ---- HUD (SCORE / COMBO) — compacto, flotando sobre los carriles ------ */
 
 .amaris-piano-hud {
@@ -325,6 +368,8 @@
 }
 .amaris-piano-feedback--great { color: var(--ap-blue); text-shadow: 0 0 16px rgba(127, 217, 255, 0.7); }
 .amaris-piano-feedback--miss { color: #ff7ea0; text-shadow: 0 0 16px rgba(255, 126, 160, 0.6); }
+/* Toque demasiado pronto: la nota NO se destruye, solo se avisa. */
+.amaris-piano-feedback--early { color: #ffe066; text-shadow: 0 0 16px rgba(255, 224, 102, 0.6); }
 
 @keyframes ap-feedback-shimmer {
   0% { background-position: 0% 50%; }
@@ -587,6 +632,38 @@
 
 .amaris-piano-note.is-miss .amaris-piano-note-ring {
   opacity: 0;
+}
+
+/* ---- Notas HOLD: pequeño indicador de "mantener presionado" ------------ */
+/* Mismo estilo visual que una TAP (punto 8), solo más alta y con dos
+   barritas sutiles arriba/abajo que insinúan "sostener", sin tapar la foto. */
+.amaris-piano-note--hold::before,
+.amaris-piano-note--hold::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  width: 20px;
+  height: 3px;
+  border-radius: 2px;
+  transform: translateX(-50%);
+  background: rgba(255, 255, 255, 0.55);
+  z-index: 4;
+  pointer-events: none;
+}
+.amaris-piano-note--hold::before { top: 7px; }
+.amaris-piano-note--hold::after { bottom: 7px; }
+
+/* Mientras el jugador sostiene el dedo/tecla sobre un HOLD: brillo
+   continuo más fuerte (distinto del "pop" corto de is-hit, que sigue
+   disparándose una vez al iniciar el hold). Se quita en judgeNote(). */
+.amaris-piano-note.is-holding {
+  box-shadow: 0 0 26px rgba(127, 217, 255, 0.65), 0 0 46px rgba(157, 123, 255, 0.4),
+    0 8px 16px rgba(0, 0, 0, 0.45);
+}
+
+.amaris-piano-note.is-holding .amaris-piano-note-ring {
+  animation: ap-ring-pulse 0.5s ease-in-out infinite;
+  filter: drop-shadow(0 0 12px rgba(127, 217, 255, 0.9));
 }
 
 /* ---- Golpe de acierto (cambio a la foto "hit") -------------------------- */
