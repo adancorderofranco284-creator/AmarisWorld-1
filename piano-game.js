@@ -398,6 +398,75 @@
   // sigue existiendo solo para los sonidos pequeños (playPianoNote,
   // playMissThud, resolveResultSoundForSong), que son un sistema
   // totalmente aparte y no se tocan.
+  // Traduce audio.error.code (1-4) al nombre real que usa el navegador,
+  // tal como se pidió explícitamente en el diagnóstico: sin esto,
+  // "código 4" no dice nada útil por sí solo.
+  var MEDIA_ERROR_NAMES = {
+    1: "MEDIA_ERR_ABORTED",
+    2: "MEDIA_ERR_NETWORK",
+    3: "MEDIA_ERR_DECODE",
+    4: "MEDIA_ERR_SRC_NOT_SUPPORTED"
+  };
+
+  function mediaErrorCodeName(code) {
+    return MEDIA_ERROR_NAMES[code] || ("CÓDIGO DESCONOCIDO (" + code + ")");
+  }
+
+  // Vuelca a consola, con el prefijo [AMARIS AUDIO] pedido explícitamente,
+  // EXACTAMENTE los campos solicitados del HTMLAudioElement, en el orden
+  // pedido. "label" identifica en qué punto del ciclo de vida se tomó la
+  // lectura (después de load(), tras un evento del audio, etc.).
+  function logAmarisAudio(label, extra) {
+    var audio = state.songAudio;
+    console.log("[AMARIS AUDIO] ---- " + label + " ----");
+    if (extra) {
+      Object.keys(extra).forEach(function (key) {
+        console.log("[AMARIS AUDIO] " + key + ":", extra[key]);
+      });
+    }
+    if (!audio) return;
+    console.log("[AMARIS AUDIO] audio.src:", audio.src);
+    console.log("[AMARIS AUDIO] audio.currentSrc:", audio.currentSrc);
+    console.log("[AMARIS AUDIO] audio.readyState:", audio.readyState);
+    console.log("[AMARIS AUDIO] audio.networkState:", audio.networkState);
+    console.log("[AMARIS AUDIO] audio.duration:", audio.duration);
+    console.log("[AMARIS AUDIO] audio.paused:", audio.paused);
+    console.log("[AMARIS AUDIO] audio.muted:", audio.muted);
+    console.log("[AMARIS AUDIO] audio.volume:", audio.volume);
+    if (audio.error) {
+      console.log(
+        "[AMARIS AUDIO] audio.error: código " + audio.error.code + " = " + mediaErrorCodeName(audio.error.code)
+      );
+    } else {
+      console.log("[AMARIS AUDIO] audio.error: null");
+    }
+  }
+
+  // Comprobación de diagnóstico (punto 2 del pedido): un HEAD a la URL
+  // final del audio, SOLO para saber si el archivo existe en esa ruta
+  // exacta. Nunca decide nada por sí sola (audio.play() sigue intentando
+  // igual, sin esperar a este resultado) — es puramente informativa,
+  // porque un fetch bloqueado (CORS/file://) NO significa que el archivo
+  // no exista.
+  function checkAmarisAudioUrl(url) {
+    if (typeof fetch !== "function") return;
+    fetch(url, { method: "HEAD" })
+      .then(function (res) {
+        if (res.status === 404) {
+          console.log("[AMARIS AUDIO] ERROR: EL ARCHIVO NO EXISTE EN ESA RUTA");
+        } else if (res.ok) {
+          console.log("[AMARIS AUDIO] ARCHIVO ENCONTRADO");
+        } else {
+          console.log("[AMARIS AUDIO] RESPUESTA HTTP " + res.status + " AL COMPROBAR EL ARCHIVO");
+        }
+      })
+      .catch(function () {
+        // Típico al abrir con file:// o por CORS: no implica que el mp3
+        // no exista, así que se reporta como lo que es, sin adivinar.
+        console.log("[AMARIS AUDIO] FETCH BLOQUEADO");
+      });
+  }
+
   function ensureSongAudioEl() {
     if (state.songAudio) return state.songAudio;
     var audio = new Audio();
@@ -413,20 +482,33 @@
     // playPromise de audio.play() en startActiveSongAndThen), solo dejan
     // rastro claro en consola de en qué punto exacto está el audio.
     ["loadedmetadata", "loadeddata", "canplay", "canplaythrough", "pause", "ended"].forEach(function (evt) {
-      audio.addEventListener(evt, function () { logAudioDiagnostics(evt); });
+      audio.addEventListener(evt, function () {
+        logAudioDiagnostics(evt);
+        logAmarisAudio(evt);
+      });
     });
     audio.addEventListener("playing", function () {
       logAudioDiagnostics("playing");
+      logAmarisAudio("playing");
       logAlways("[AMARIS PIANO] AUDIO PLAYING");
       hideAudioError();
     });
     audio.addEventListener("error", function () {
+      var code = audio.error ? audio.error.code : null;
       console.error("[AMARIS PIANO] AUDIO ERROR", {
         src: audio.currentSrc || audio.src,
         error: audio.error,
         readyState: audio.readyState,
         networkState: audio.networkState
       });
+      logAmarisAudio("error event");
+      if (code === 3 || code === 4) {
+        console.log(
+          "[AMARIS AUDIO] El navegador encontró el archivo pero no pudo decodificarlo (" +
+            mediaErrorCodeName(code) +
+            ")."
+        );
+      }
       state.songAudioFailed = true;
       mostrarErrorDeAudio("No se pudo cargar el archivo de audio.");
     });
@@ -460,10 +542,18 @@
   // (por ejemplo, un fallo antes de abrir el juego), no pasa nada.
   function mostrarErrorDeAudio(mensaje) {
     if (!els.audioError) return;
-    els.audioError.textContent = "⚠ " + mensaje + " Revisa la consola para el diagnóstico completo.";
+    if (els.audioErrorText) {
+      els.audioErrorText.textContent = "⚠ " + mensaje + " Revisa la consola para el diagnóstico completo.";
+    } else {
+      els.audioError.textContent = "⚠ " + mensaje + " Revisa la consola para el diagnóstico completo.";
+    }
     els.audioError.hidden = false;
+    // El banner de error ya NO se autooculta mientras exista el botón de
+    // diagnóstico temporal (punto 7 del pedido): que desaparezca solo a
+    // los 6s le quitaba al usuario la oportunidad de pulsar "▶ PROBAR
+    // CANCIÓN". Se puede cerrar manualmente si hace falta con
+    // hideAudioError() desde la consola.
     window.clearTimeout(state.audioErrorHideTimer);
-    state.audioErrorHideTimer = window.setTimeout(hideAudioError, 6000);
   }
 
   function hideAudioError() {
@@ -547,12 +637,29 @@
 
     var audio = ensureSongAudioEl();
     var audioUrl = song.file;
+    // "folder" y "file" se separan de song.file solo para el diagnóstico
+    // (song.file YA es la ruta completa que arma piano-music-loader.js;
+    // esto no cambia cuál archivo se carga, solo cómo se reporta).
+    var lastSlash = audioUrl.lastIndexOf("/");
+    var diagFolder = lastSlash === -1 ? "" : audioUrl.slice(0, lastSlash);
+    var diagFile = lastSlash === -1 ? audioUrl : audioUrl.slice(lastSlash + 1);
 
     logAlways("[AMARIS PIANO] SONG:\n" + (song.name || song.id));
     logAlways("[AMARIS PIANO] AUDIO URL:\n" + audioUrl);
 
+    console.log("[AMARIS AUDIO] SONG ID: " + song.id);
+    console.log("[AMARIS AUDIO] SONG NAME: " + (song.name || song.id));
+    console.log("[AMARIS AUDIO] FOLDER: " + diagFolder);
+    console.log("[AMARIS AUDIO] FILE: " + diagFile);
+    console.log("[AMARIS AUDIO] FINAL URL: " + audioUrl);
+
+    // Diagnóstico de existencia (punto 2 del pedido) — no bloquea ni
+    // decide nada, corre en paralelo a audio.play() de abajo.
+    checkAmarisAudioUrl(audioUrl);
+
     switchSongAudioTo(audio, audioUrl);
     audio.volume = CONFIG.musicVolume;
+    logAmarisAudio("después de load()");
 
     logDebug("[AMARIS PIANO] Intentando reproducir audio...");
     var playPromise = audio.play();
@@ -576,6 +683,7 @@
       .catch(function (err) {
         state.songAudioFailed = true;
         var mediaError = audio.error;
+        var rejectionName = err && err.name; // p. ej. "NotAllowedError", "NotSupportedError"
         console.error("[AMARIS PIANO] ERROR DE AUDIO:", {
           src: audio.currentSrc || audio.src,
           playRejection: err && (err.message || String(err)),
@@ -587,6 +695,24 @@
           muted: audio.muted,
           volume: audio.volume
         });
+        console.log("[AMARIS AUDIO] audio.play() FUE RECHAZADO");
+        console.log("[AMARIS AUDIO] nombre del rechazo: " + (rejectionName || "(sin nombre)"));
+        if (mediaError) {
+          console.log(
+            "[AMARIS AUDIO] audio.error: código " +
+              mediaError.code +
+              " = " +
+              mediaErrorCodeName(mediaError.code)
+          );
+        } else {
+          console.log(
+            "[AMARIS AUDIO] audio.error es null: el rechazo NO vino de un error de carga del archivo, " +
+              "sino de audio.play() en sí (revisa el nombre del rechazo arriba: " +
+              "NotAllowedError = el navegador bloqueó la reproducción automática; " +
+              "NotSupportedError = el navegador no reconoce el formato/URL)."
+          );
+        }
+        logAmarisAudio("play() rechazado");
         mostrarErrorDeAudio("La canción \u201c" + (song.name || song.id) + "\u201d no pudo reproducirse.");
         // La partida sigue (con el reloj de respaldo), pero el fallo
         // queda visible en pantalla y en consola — nunca en silencio.
@@ -794,7 +920,10 @@
       // tres pantallas (inicio/juego/final) para poder mostrarse encima
       // de cualquiera de ellas; oculto por defecto, sin estilos nuevos en
       // piano-game.css — su apariencia se fija por JS en buildDOM().
-      '  <div id="apAudioError" hidden></div>' +
+      '  <div id="apAudioError" hidden>' +
+      '    <span id="apAudioErrorText"></span>' +
+      '    <button type="button" id="apAudioTestBtn">▶ PROBAR CANCIÓN</button>' +
+      "  </div>" +
 
       // ---- Pantalla de inicio ----
       '  <section class="amaris-piano-screen amaris-piano-screen--start" id="apStartScreen">' +
@@ -868,6 +997,8 @@
     els.modal = overlay.querySelector(".amaris-piano-modal");
     els.closeX = overlay.querySelector("#apCloseX");
     els.audioError = overlay.querySelector("#apAudioError");
+    els.audioErrorText = overlay.querySelector("#apAudioErrorText");
+    els.audioTestBtn = overlay.querySelector("#apAudioTestBtn");
     // Estilos inline a propósito (nada nuevo en piano-game.css/piano-mobile.css):
     // banner discreto, coherente con la paleta oscura/dorada existente,
     // fijo arriba del modal, por encima de cualquiera de las 3 pantallas.
@@ -877,6 +1008,39 @@
       "font-family:'Jost',sans-serif;font-size:12px;line-height:1.4;" +
       "padding:10px 14px;border-radius:10px;text-align:center;" +
       "box-shadow:0 4px 14px rgba(0,0,0,0.4);";
+    els.audioErrorText.style.cssText = "display:block;margin-bottom:8px;";
+    // Botón de diagnóstico TEMPORAL (punto 7 del pedido): fuerza
+    // audio.currentTime = 0; audio.play() directo, en respuesta a un
+    // clic real del usuario, para descartar de un solo golpe si el
+    // problema es una política de autoplay del navegador (el clic aquí
+    // SIEMPRE cuenta como gesto de usuario válido) o el propio archivo.
+    els.audioTestBtn.style.cssText =
+      "background:#ffe9a8;color:#2a1500;border:none;border-radius:8px;" +
+      "padding:6px 14px;font-family:'Jost',sans-serif;font-size:12px;" +
+      "font-weight:600;cursor:pointer;";
+    els.audioTestBtn.addEventListener("click", function () {
+      var audio = state.songAudio;
+      if (!audio) {
+        console.log("[AMARIS AUDIO] PROBAR CANCIÓN: no hay ningún <audio> creado todavía.");
+        return;
+      }
+      console.log("[AMARIS AUDIO] PROBAR CANCIÓN: intentando audio.play() directo desde el botón...");
+      try {
+        audio.currentTime = 0;
+      } catch (e) {
+        console.log("[AMARIS AUDIO] PROBAR CANCIÓN: no se pudo poner currentTime a 0 (" + e.message + ")");
+      }
+      var p = audio.play();
+      if (p && typeof p.then === "function") {
+        p.then(function () {
+          console.log("[AMARIS AUDIO] PROBAR CANCIÓN: audio.play() se resolvió correctamente.");
+          logAmarisAudio("PROBAR CANCIÓN: éxito");
+        }).catch(function (err) {
+          console.log("[AMARIS AUDIO] PROBAR CANCIÓN: audio.play() fue rechazado. Nombre: " + (err && err.name));
+          logAmarisAudio("PROBAR CANCIÓN: rechazado");
+        });
+      }
+    });
     els.startScreen = overlay.querySelector("#apStartScreen");
     els.startBtn = overlay.querySelector("#apStartBtn");
     els.songList = overlay.querySelector("#apSongList");
