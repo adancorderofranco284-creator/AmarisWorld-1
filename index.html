@@ -17,9 +17,14 @@
 
   <link rel="stylesheet" href="style.css?v=3" />
   <link rel="stylesheet" href="piano-game.css?v=3" />
+  <!-- Efectos de HOLD (temporizador circular + aura de energía): solo
+       AÑADE reglas nuevas, no toca ni una línea de piano-game.css. Ver
+       hold-effects.css. Se carga ANTES que piano-mobile.css para que el
+       adaptador móvil pueda amortiguar estos efectos en táctil. -->
+  <link rel="stylesheet" href="hold-effects.css?v=1" />
   <!-- Capa de adaptación MÓVIL de Amaris Piano: solo AÑADE reglas sobre
        piano-game.css (nunca lo modifica). Ver piano-mobile.css. -->
-  <link rel="stylesheet" href="piano-mobile.css?v=1" />
+  <link rel="stylesheet" href="piano-mobile.css?v=2" />
 </head>
 <body>
 
@@ -158,7 +163,12 @@
   <!-- Minijuego "Amaris Piano". Módulo independiente: no toca script.js
        ni bg-life.js. Se abre desde la tarjeta "🎹 AMARIS PIANO" dentro
        de la pantalla SORPRESA (ver #surprisePianoBtn más arriba). -->
-  <script src="piano-game.js?v=3"></script>
+  <script src="piano-game.js?v=4"></script>
+  <!-- Música personalizada (opcional): lee assets/music/music.json y
+       registra canciones extra con AmarisPiano.addSong(), sin tocar
+       PIANO_SONGS. Si el manifiesto no existe, no hace nada. Ver
+       piano-music-loader.js y GUIA-musica-personalizada.md. -->
+  <script src="piano-music-loader.js?v=1"></script>
   <!-- Capa de adaptación MÓVIL de Amaris Piano (detección táctil, resize
        fiable con visualViewport, pantalla "GIRA TU TELÉFONO"). NO duplica
        ni reemplaza nada del GAME CORE de arriba; ver piano-mobile.js. -->

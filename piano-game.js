@@ -27,6 +27,42 @@
        hay un pequeño selector de canciones en la pantalla de inicio
        (si hay más de una en PIANO_SONGS) que llama a esto mismo.
 
+     ---- AÑADIDO (mejora de HOLD/imágenes/música/sonido, sin tocar nada
+     de lo anterior) ----
+
+     window.AmarisPiano.addSong(song) → registra una canción MÁS, además
+       de las ya definidas en PIANO_SONGS, sin tocar ese arreglo. Pensado
+       para que piano-music-loader.js (opcional, ver ese archivo) pueda
+       agregar canciones descubiertas en assets/music/music.json sin
+       tener que editar este archivo. song = { id, name, file, chart?,
+       cover?, sfx? }. No hace nada si el id ya existe (evita duplicados).
+
+     window.AmarisPiano.setSongChart(id, chart) → reemplaza el chart de
+       una canción YA registrada (útil cuando el chart.json de esa
+       canción se cargó de forma asíncrona, después de addSong()).
+
+     window.AmarisPiano.setVolume({ music, sfx }) → ajusta CONFIG.musicVolume
+       / CONFIG.sfxVolume (0 a 1) en caliente. Ninguno de los dos afecta la
+       lógica de juego, solo el volumen de reproducción.
+
+     Cada nota de un chart (setChart(), el "chart" de una canción en
+     PIANO_SONGS, o un chart.json cargado por piano-music-loader.js) ahora
+     acepta, además de { time, lane, friend, type, duration } de siempre:
+       "image"    → ruta de imagen que reemplaza la foto del "friend" para
+                    ESA nota puntual (opcional).
+       "hitImage" → ruta de imagen que reemplaza a "image" justo cuando el
+                    jugador acierta esa nota puntual (opcional). Sin ella,
+                    se usa el hitImage del "friend" si tiene uno; sin
+                    ninguno de los dos, la nota no cambia de imagen al
+                    acertar (comportamiento de siempre).
+     Ninguno de los dos campos es obligatorio ni rompe charts existentes.
+
+     Sonido de resultado (PERFECT/GREAT/MISS/HOLD completado): se resuelve
+     con prioridad (1) sonido de la canción activa (song.sfx.<kind>), (2)
+     sonido global (GLOBAL_SFX.<kind>, más abajo), (3) el sonido sintetizado
+     de siempre (playPianoNote / un "thud" simple para MISS). Nunca truena
+     si falta un archivo: cae al siguiente nivel en silencio.
+
    TOQUE / TAP / HOLD:
      Cada nota tiene su propio pointerdown/up/cancel (mouse, touch,
      stylus, y teclado 1-4), enganchado directamente sobre su elemento
@@ -127,6 +163,21 @@
   // defecto sin tener que reordenar PIANO_SONGS.
   var DEFAULT_SONG_ID = PIANO_SONGS.length ? PIANO_SONGS[0].id : null;
 
+  // 🔊 Sonidos de resultado GLOBALES (punto 13 del pedido: nivel 2 de la
+  // prioridad, entre el sonido propio de la canción y el sintetizado de
+  // respaldo). Completamente opcional: si estos archivos no existen, el
+  // juego jamás truena — simplemente sigue usando el sonido sintetizado
+  // de siempre. Coloca los .mp3 en assets/piano-music/sfx/ si quieres
+  // usarlos; si no, deja esto vacío y no pasa nada.
+  var GLOBAL_SFX = {
+    // perfect: "assets/piano-music/sfx/perfect.mp3",
+    // excellent: "assets/piano-music/sfx/excellent.mp3",
+    // great: "assets/piano-music/sfx/great.mp3",
+    // good: "assets/piano-music/sfx/good.mp3",
+    // miss: "assets/piano-music/sfx/miss.mp3",
+    // hold: "assets/piano-music/sfx/hold.mp3"
+  };
+
   function getSongById(id) {
     for (var i = 0; i < PIANO_SONGS.length; i++) {
       if (PIANO_SONGS[i].id === id) return PIANO_SONGS[i];
@@ -155,7 +206,13 @@
     // multiplica por este valor. Bájalo (0.5) para HOLD más cortos/
     // rápidos visualmente; súbelo (1.0) para HOLD más largos. No afecta
     // en absoluto cuánto hay que sostener la tecla ni la puntuación.
-    holdLengthMultiplier: 0.65
+    holdLengthMultiplier: 0.65,
+
+    // 🔊 Volumen (punto 15 del pedido). 1.0 = volumen completo, 0 = mudo.
+    // No afecta a ningún otro sistema; ajustable en caliente con
+    // AmarisPiano.setVolume({ music, sfx }).
+    musicVolume: 1.0,
+    sfxVolume: 0.7
   };
 
   /* ------------------------------------------------------------------ */
@@ -240,14 +297,39 @@
     osc.frequency.setValueAtTime(freq, now);
 
     // Envolvente simple tipo "pluck" de piano: ataque rápido, caída suave.
+    // El pico se escala por CONFIG.sfxVolume (punto 15); Math.max evita
+    // pasarle 0 a exponentialRampToValueAtTime, que no acepta 0 exacto.
+    var peak = Math.max(0.0001, 0.35 * CONFIG.sfxVolume);
     gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.35, now + 0.012);
+    gain.gain.exponentialRampToValueAtTime(peak, now + 0.012);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.55);
 
     osc.connect(gain);
     gain.connect(ctx.destination);
     osc.start(now);
     osc.stop(now + 0.6);
+  }
+
+  // Sonido sintetizado de respaldo para MISS (nivel 3 de la prioridad, punto
+  // 13): un "thud" grave y corto, bien distinto del "ding" de acierto, para
+  // que un MISS sin sonido personalizado siga sonando a fallo y no a acierto.
+  // Nunca existió antes un sonido de MISS; esto es puramente aditivo.
+  function playMissThud() {
+    var ctx = ensureAudioContext();
+    if (!ctx) return;
+    var now = ctx.currentTime;
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(180, now);
+    osc.frequency.exponentialRampToValueAtTime(70, now + 0.18);
+    var peak = Math.max(0.0001, 0.22 * CONFIG.sfxVolume);
+    gain.gain.setValueAtTime(peak, now);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.24);
   }
 
   /* ------------------------------------------------------------------ */
@@ -263,6 +345,7 @@
     var audio = new Audio();
     audio.preload = "auto";
     audio.loop = false;
+    audio.volume = CONFIG.musicVolume; // 🔊 punto 15, ajustable con setVolume()
     // No usa Web Audio API a propósito: HTMLAudioElement es más simple y
     // suficiente para reproducir un mp3 de fondo, y no interfiere con el
     // AudioContext ya usado para el "ding" de cada nota (playPianoNote).
@@ -390,6 +473,111 @@
     }
 
     fallbackTimer = window.setTimeout(finish, 400);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* 3.1b) SONIDOS DE RESULTADO PERSONALIZADOS (puntos 12-15 del pedido) */
+  /* Prioridad: 1) sonido de la canción activa (song.sfx.<kind>); 2)      */
+  /* sonido global (GLOBAL_SFX.<kind>); 3) sonido sintetizado del juego   */
+  /* (playPianoNote para aciertos/hold, playMissThud para fallos), que    */
+  /* SIEMPRE existe, así que nunca hay silencio ni error por archivo      */
+  /* faltante. IMPORTANTE: esto NO es un nuevo nivel de puntuación — el   */
+  /* sistema de PUNTUACIÓN sigue exactamente igual (judgeNote decide solo */
+  /* entre "perfect"/"great"/"miss", ver sección 6). "kind" aquí es SOLO  */
+  /* una etiqueta de qué archivo de sonido buscar; "hold" se usa nada más */
+  /* para el HOLD que se completa correctamente (que sigue puntuando      */
+  /* como "perfect"), para poder darle su propio audio distinto si se     */
+  /* quiere (p. ej. hold.mp3), sin tocar el puntaje.                      */
+  /* ------------------------------------------------------------------ */
+
+  var sfxCache = {}; // "songId:kind" -> HTMLAudioElement resuelto, o null si no existe
+
+  function resolveResultSoundForSong(song, kind) {
+    var cacheKey = (song ? song.id : "_") + ":" + kind;
+    if (Object.prototype.hasOwnProperty.call(sfxCache, cacheKey)) return sfxCache[cacheKey];
+
+    var path = (song && song.sfx && song.sfx[kind]) || (GLOBAL_SFX && GLOBAL_SFX[kind]) || null;
+    if (!path) {
+      sfxCache[cacheKey] = null;
+      return null;
+    }
+    var audio = new Audio();
+    audio.preload = "auto";
+    audio.src = path;
+    // Si el archivo no existe/falla, se recuerda como "no disponible" para
+    // no reintentar cargar en cada golpe; playResultSound() ya cae sola al
+    // sonido sintetizado en ese mismo golpe (no espera a este evento).
+    audio.addEventListener(
+      "error",
+      function () {
+        sfxCache[cacheKey] = null;
+      },
+      { once: true }
+    );
+    sfxCache[cacheKey] = audio;
+    return audio;
+  }
+
+  function resolveResultSound(kind) {
+    return resolveResultSoundForSong(getActiveSong(), kind);
+  }
+
+  // fallbackFn es el sonido sintetizado a usar si no hay archivo personalizado
+  // (o si falla al reproducirse en este instante concreto).
+  function playResultSound(kind, fallbackFn) {
+    var fallback = typeof fallbackFn === "function" ? fallbackFn : function () {};
+    var audio = resolveResultSound(kind);
+    if (!audio) {
+      fallback();
+      return;
+    }
+    try {
+      // cloneNode permite golpes seguidos (p. ej. combo rápido) sin cortar
+      // el sonido del golpe anterior, que seguirá sonando su propia copia.
+      var instance = audio.cloneNode(true);
+      instance.volume = CONFIG.sfxVolume;
+      var p = instance.play();
+      if (p && typeof p.catch === "function") p.catch(fallback);
+    } catch (e) {
+      fallback();
+    }
+  }
+
+  // Precarga (punto 16) SOLO los recursos de la canción indicada: su
+  // portada, las imágenes/hitImages que use su chart (si trae uno propio) y
+  // sus sonidos de resultado. Nunca precarga las demás canciones. Es segura
+  // de llamar varias veces (el navegador cachea by URL) y jamás truena si
+  // falta un archivo (Image()/Audio() fallan en silencio, igual que
+  // preloadHitImages() ya hacía para los amigos).
+  function preloadSongAssets(song) {
+    if (!song) return;
+    if (song.cover) {
+      var coverImg = new Image();
+      coverImg.src = song.cover;
+    }
+    if (Array.isArray(song.chart)) {
+      song.chart.forEach(function (entry) {
+        if (entry.image) {
+          var i1 = new Image();
+          i1.src = entry.image;
+        }
+        if (entry.hitImage) {
+          var i2 = new Image();
+          i2.src = entry.hitImage;
+        }
+      });
+    }
+    if (song.sfx) {
+      Object.keys(song.sfx).forEach(function (kind) {
+        resolveResultSoundForSong(song, kind);
+      });
+    }
+  }
+
+  function preloadGlobalSfx() {
+    Object.keys(GLOBAL_SFX).forEach(function (kind) {
+      resolveResultSoundForSong(null, kind);
+    });
   }
 
   /* ------------------------------------------------------------------ */
@@ -540,6 +728,8 @@
 
     bindStaticEvents();
     preloadHitImages();
+    preloadGlobalSfx();
+    preloadSongAssets(getActiveSong());
     renderSongList();
     state.built = true;
   }
@@ -566,6 +756,7 @@
       btn.textContent = song.name || song.id;
       btn.addEventListener("click", function () {
         state.activeSongId = song.id;
+        preloadSongAssets(song); // punto 16: precargar justo al elegirla
         renderSongList();
       });
       els.songList.appendChild(btn);
@@ -710,8 +901,14 @@
     };
   }
 
-  function createNoteElement(friendIndex, type) {
+  // imageOverride/hitImageOverride (opcionales, punto 7-9 del pedido):
+  // permiten que UNA nota puntual del chart use su propia imagen en vez de
+  // la del "friend" que le tocó — sin afectar a ninguna otra nota ni a la
+  // lógica de amigos/avatares, que sigue funcionando exactamente igual
+  // cuando no se pasan.
+  function createNoteElement(friendIndex, type, imageOverride, hitImageOverride) {
     var friend = FRIENDS[friendIndex % FRIENDS.length] || { name: "?", image: "" };
+    var imgSrc = imageOverride || friend.image;
     var wrap = document.createElement("div");
     wrap.className = "amaris-piano-note " + (type === "hold" ? "amaris-piano-note--hold" : "amaris-piano-note--tap");
 
@@ -738,20 +935,38 @@
       var fill = document.createElement("span");
       fill.className = "amaris-piano-note-holdfill";
       wrap.appendChild(fill);
+
+      // 🕐 Indicador CIRCULAR de progreso (puntos 1-2 del pedido). Su
+      // relleno se controla ÚNICAMENTE con la variable CSS
+      // --ap-hold-progress (0 a 100), actualizada en tick() reutilizando
+      // el MISMO cálculo que ya alimenta la barra lineal de arriba
+      // (holdProgress) — nunca un segundo temporizador independiente que
+      // pudiera desincronizarse. El estilo vive en hold-effects.css.
+      var ringProgress = document.createElement("span");
+      ringProgress.className = "amaris-piano-note-holdring";
+      ringProgress.style.setProperty("--ap-hold-progress", "0");
+      wrap.appendChild(ringProgress);
+
+      // 🌈 Aura de energía (puntos 4-6): anillo de color que rota
+      // alrededor de la tecla SOLO mientras se sostiene (ver .is-holding
+      // en hold-effects.css). Puramente decorativo, no afecta hit-testing.
+      var aura = document.createElement("span");
+      aura.className = "amaris-piano-note-aura";
+      wrap.appendChild(aura);
     }
 
     var img = document.createElement("img");
     img.className = "amaris-piano-note-img";
     img.alt = "";
     img.draggable = false;
-    img.src = friend.image;
+    img.src = imgSrc;
     img.addEventListener("error", function () {
       // Si el error ocurre DESPUÉS de acertar (falló la hitImage, no la
       // imagen normal), no destruimos la nota con el avatar de iniciales:
       // simplemente nos quedamos mostrando la imagen normal, que ya se
       // había cargado bien.
       if (wrap.dataset.apHit === "1") {
-        img.src = friend.image;
+        img.src = imgSrc;
         return;
       }
       wrap.classList.add("amaris-piano-note--fallback");
@@ -786,7 +1001,11 @@
   // hay que mantener presionado; la tecla se dibuja más larga en
   // proporción a esa duración (misma velocidad de caída que las TAP, así
   // nunca se desincroniza del audio: no es una animación CSS aparte).
-  function spawnNote(lane, friendIndex, hitAtMs, type, durationMs) {
+  // imageOverride/hitImageOverride (opcionales, puntos 7-9 del pedido):
+  // imagen específica de ESTA nota puntual, tal como puede venir de un
+  // chart.json ({ "image": "...", "hitImage": "..." }). Sin ellas, el
+  // comportamiento es IDÉNTICO al de siempre (imagen del "friend").
+  function spawnNote(lane, friendIndex, hitAtMs, type, durationMs, imageOverride, hitImageOverride) {
     type = type === "hold" ? "hold" : "tap";
     durationMs = type === "hold" ? Math.max(300, durationMs || 0) : 0;
 
@@ -802,7 +1021,7 @@
     var heightPx = type === "hold" ? Math.max(metrics.tapHeightPx, visualDurationMs * metrics.pxPerMs) : metrics.tapHeightPx;
     var travelPx = Math.max(40, metrics.travelBase - heightPx);
 
-    var el = createNoteElement(friendIndex, type);
+    var el = createNoteElement(friendIndex, type, imageOverride, hitImageOverride);
     if (type === "hold") el.style.height = heightPx.toFixed(1) + "px";
 
     var note = {
@@ -818,10 +1037,16 @@
       holdPointerId: null, // pointerId (o "key0".."key3") que la está sosteniendo
       holdDeadline: hitAtMs + durationMs,
       travelPx: travelPx,
-      // Referencia directa a la barra de progreso (o null en TAP), guardada
-      // una sola vez aquí para no tener que buscarla con querySelector en
-      // cada frame de tick() — importante para mantener 60 FPS en móvil.
+      // Imagen a mostrar al acertar (puntos 7-9): la de la nota si se dio
+      // una, si no la del "friend" si tiene una, si no ninguna (se
+      // mantiene la imagen normal, comportamiento de siempre).
+      hitImageSrc: hitImageOverride || (friend && friend.hitImage) || null,
+      // Referencias directas a la barra/anillo de progreso (o null en TAP),
+      // guardadas una sola vez aquí para no tener que buscarlas con
+      // querySelector en cada frame de tick() — importante para mantener
+      // 60 FPS en móvil.
       fillEl: type === "hold" ? el.querySelector(".amaris-piano-note-holdfill") : null,
+      circleEl: type === "hold" ? el.querySelector(".amaris-piano-note-holdring") : null,
       el: el
     };
     bindNoteEvents(note);
@@ -860,7 +1085,7 @@
       state.chart[state.chartIndex].time <= elapsedMs + CONFIG.fallDuration
     ) {
       var entry = state.chart[state.chartIndex];
-      spawnNote(entry.lane, entry.friend || 0, entry.time, entry.type, entry.duration);
+      spawnNote(entry.lane, entry.friend || 0, entry.time, entry.type, entry.duration, entry.image, entry.hitImage);
       state.chartIndex++;
     }
   }
@@ -919,14 +1144,14 @@
   // su src. Si ese amigo no tiene hitImage configurada, no hace nada y la
   // nota conserva su imagen normal (comportamiento previo intacto).
   function showHitImage(note) {
-    var friend = note.friend;
-    if (!friend || !friend.hitImage) return;
+    var src = note.hitImageSrc;
+    if (!src) return;
 
     var img = note.el.querySelector(".amaris-piano-note-img");
     if (!img) return; // ya cayó al avatar de iniciales antes de acertar
 
     note.el.dataset.apHit = "1";
-    img.src = friend.hitImage;
+    img.src = src;
   }
 
   function judgeNote(note, kind) {
@@ -956,7 +1181,14 @@
       showFeedback(kind === "perfect" ? "PERFECT +100" : "GREAT +50", kind);
       burstParticles(laneEl);
       flashHitline();
-      playPianoNote(note.lane);
+      // Un HOLD completado sigue puntuando como "perfect" (sin cambios),
+      // pero puede tener su PROPIO sonido ("hold") en vez del de un tap
+      // perfecto — es solo una etiqueta de sonido, no un nuevo puntaje.
+      var soundKind = note.type === "hold" ? "hold" : kind;
+      var lane = note.lane;
+      playResultSound(soundKind, function () {
+        playPianoNote(lane);
+      });
       if (navigator.vibrate) {
         try {
           navigator.vibrate(kind === "perfect" ? 12 : 8);
@@ -968,6 +1200,7 @@
       state.combo = 0;
       state.missCount++;
       showFeedback("MISS", "miss");
+      playResultSound("miss", playMissThud);
     }
 
     updateHUD();
@@ -1027,6 +1260,9 @@
       showHitImage(note);
       note.el.classList.add("is-holding", "is-hit");
       flashHitline();
+      // Ráfaga de partículas de "energía" al EMPEZAR a sostener (punto 3):
+      // es un único evento (no continuo), así que no afecta el rendimiento.
+      burstParticles(els.lanes[note.lane]);
       playPianoNote(note.lane);
       if (navigator.vibrate) {
         try {
@@ -1145,11 +1381,15 @@
         // Barra de progreso del HOLD (punto 7): se rellena de 0% a 100%
         // conforme avanza la duración MUSICAL real (note.duration), sin
         // relación con la altura visual reducida por holdLengthMultiplier.
-        if (note.fillEl && note.duration > 0) {
+        if (note.duration > 0) {
           var holdProgress = (elapsed - note.hitTime) / note.duration;
           if (holdProgress < 0) holdProgress = 0;
           if (holdProgress > 1) holdProgress = 1;
-          note.fillEl.style.height = (holdProgress * 100).toFixed(1) + "%";
+          if (note.fillEl) note.fillEl.style.height = (holdProgress * 100).toFixed(1) + "%";
+          // Indicador circular (puntos 1-2): MISMO holdProgress de arriba,
+          // nunca un segundo cálculo — así nunca puede desincronizarse del
+          // tiempo real que falta para terminar el HOLD.
+          if (note.circleEl) note.circleEl.style.setProperty("--ap-hold-progress", (holdProgress * 100).toFixed(1));
         }
         // Mientras se sostiene, no aplica el corte de MISS por tiempo:
         // solo importa si se llegó a la duración completa.
@@ -1396,7 +1636,47 @@
     // Cambia la canción activa para la próxima partida (id de PIANO_SONGS).
     // Si el id no existe, no hace nada (se queda con la canción anterior).
     setSong: function (id) {
-      if (getSongById(id)) state.activeSongId = id;
+      if (getSongById(id)) {
+        state.activeSongId = id;
+        preloadSongAssets(getSongById(id)); // punto 16
+      }
+    },
+
+    // ---- Añadido para música/imágenes/sonido personalizados (puntos 10-16)
+    // Registra una canción MÁS sin tocar el arreglo PIANO_SONGS. Pensado
+    // para piano-music-loader.js (opcional); también se puede llamar a
+    // mano. No hace nada si el id ya existe (evita duplicados). Devuelve
+    // true/false para saber si se registró.
+    addSong: function (song) {
+      if (!song || !song.id || !song.file) return false;
+      if (getSongById(song.id)) return false;
+      PIANO_SONGS.push(song);
+      renderSongList(); // refresca el selector si el juego ya construyó su DOM
+      return true;
+    },
+
+    // Reemplaza el chart de una canción YA registrada (para cuando su
+    // chart.json se carga de forma asíncrona, después de addSong()).
+    setSongChart: function (id, chart) {
+      var song = getSongById(id);
+      if (!song || !Array.isArray(chart)) return false;
+      song.chart = chart.slice().sort(function (a, b) {
+        return a.time - b.time;
+      });
+      return true;
+    },
+
+    // Ajusta el volumen de música/sonidos en caliente (punto 15). Ambos
+    // parámetros son opcionales y van de 0 (mudo) a 1 (volumen completo).
+    setVolume: function (opts) {
+      opts = opts || {};
+      if (typeof opts.music === "number") {
+        CONFIG.musicVolume = Math.max(0, Math.min(1, opts.music));
+        if (state.songAudio) state.songAudio.volume = CONFIG.musicVolume;
+      }
+      if (typeof opts.sfx === "number") {
+        CONFIG.sfxVolume = Math.max(0, Math.min(1, opts.sfx));
+      }
     },
 
     // ---- Añadido SOLO para piano-mobile.js (capa de adaptación móvil) --

@@ -1,0 +1,182 @@
+/* ==========================================================================
+   AMARIS WORLD — hold-effects.css
+   Capa PURAMENTE ADITIVA para el minijuego Amaris Piano: agrega el
+   indicador circular de progreso del HOLD y el efecto de energía/arcoíris
+   mientras se sostiene (puntos 1-6 y 17-19 del pedido de mejora).
+
+   NO MODIFICA ni una sola regla de piano-game.css: todo lo de aquí son
+   selectores/elementos NUEVOS (.amaris-piano-note-holdring,
+   .amaris-piano-note-aura) o combinaciones de clases ya existentes
+   (.is-holding, .is-judged, .is-perfect, .is-miss) que sirven de GANCHO
+   sin tocar su definición original. El diseño base de Amaris Piano
+   (fondo oscuro/morado, carriles, bordes azulados, glow existente) se
+   mantiene intacto: esto solo añade la capa de energía sobre el HOLD.
+
+   Se carga DESPUÉS de piano-game.css y ANTES de piano-mobile.css en
+   index.html, así el adaptador móvil puede amortiguar estos efectos en
+   táctil sin tener que repetir su definición.
+
+   Los elementos .amaris-piano-note-holdring y .amaris-piano-note-aura los
+   crea piano-game.js SOLO para notas HOLD (createNoteElement); no existen
+   en notas TAP. El progreso real (0-100) llega vía la variable CSS
+   --ap-hold-progress, actualizada en cada frame de tick() con el MISMO
+   cálculo que ya alimenta la barra lineal existente — nunca un segundo
+   temporizador que pudiera desincronizarse del tiempo real de HOLD.
+   ========================================================================== */
+
+:root {
+  /* Paleta de energía adaptada al pedido: morado/azul/cian/rosa/violeta,
+     distinta de --ap-rainbow (que sigue siendo la de partículas/feedback,
+     sin tocar). Un solo lugar para ajustar el tono de la "aura". */
+  --ap-aura: conic-gradient(
+    from 0deg,
+    #7fd9ff,
+    #6fa8ff 22%,
+    #9d7bff 45%,
+    #c9a6ff 62%,
+    #ff8fd6 80%,
+    #7fd9ff 100%
+  );
+}
+
+/* ---- Indicador CIRCULAR de progreso del HOLD (puntos 1-2) --------------- */
+/* Dibujado con un solo conic-gradient (nada de SVG ni <canvas>): el arco ya
+   recorrido usa un color vivo, el resto queda como "track" apagado. Un
+   pseudo-elemento recorta el centro para que se vea como anillo (◔◑◕●) y
+   no como un pastel relleno. Vive centrado abajo, sin tapar la foto. */
+.amaris-piano-note-holdring {
+  --ap-hold-progress: 0; /* 0-100, escrita por JS en cada frame mientras se sostiene */
+  position: absolute;
+  left: 50%;
+  bottom: 8px;
+  width: 20px;
+  height: 20px;
+  margin-left: -10px;
+  border-radius: 50%;
+  z-index: 4;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  background: conic-gradient(
+    var(--ap-gold-strong, #ffe9a8) calc(var(--ap-hold-progress) * 3.6deg),
+    rgba(255, 255, 255, 0.2) 0
+  );
+  box-shadow: 0 0 8px rgba(255, 233, 168, 0.6);
+}
+
+.amaris-piano-note-holdring::before {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  /* Mismo tono oscuro que el cuerpo de la tecla, para que el "agujero" del
+     anillo se funda con la tecla en vez de verse como un círculo aparte. */
+  background: rgba(9, 8, 20, 0.88);
+}
+
+.amaris-piano-note.is-holding .amaris-piano-note-holdring {
+  opacity: 1;
+}
+
+/* ---- Aura de energía / "arcoíris suave" (puntos 4-6) -------------------- */
+/* Anillo de color alrededor de la tecla que ROTA solo mientras se sostiene
+   (transform: rotate, no background-position: barato en móvil). Usa el
+   mismo truco de mask que .amaris-piano-note-ring (ya existente en
+   piano-game.css) para pintar solo el contorno, nunca el interior — así no
+   tapa ni la foto ni el indicador circular. */
+.amaris-piano-note-aura {
+  position: absolute;
+  inset: -4px;
+  border-radius: 18px;
+  padding: 2px;
+  background: var(--ap-aura);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0;
+  z-index: 2;
+  pointer-events: none;
+  animation: ap-aura-spin 2.4s linear infinite;
+  will-change: transform;
+  transition: opacity 0.15s ease;
+}
+
+.amaris-piano-note.is-holding .amaris-piano-note-aura {
+  opacity: 1;
+}
+
+@keyframes ap-aura-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---- Intensifica lo que YA existe mientras se sostiene (punto 3) -------- */
+/* Reutiliza .amaris-piano-note-glow (ya definido en piano-game.css): solo
+   le cambia el color/tamaño y le agrega un pulso suave cuando hay HOLD
+   activo. No se toca su definición base, que sigue aplicando a TAP. */
+.amaris-piano-note.is-holding .amaris-piano-note-glow {
+  background: radial-gradient(ellipse, rgba(157, 123, 255, 0.6), rgba(127, 217, 255, 0.38) 45%, transparent 75%);
+  animation: ap-hold-glow-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes ap-hold-glow-pulse {
+  0%, 100% {
+    opacity: 0.8;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.14);
+  }
+}
+
+/* ---- Al completar el HOLD correctamente (punto 18) ----------------------- */
+/* judgeNote() ya agrega is-judged + is-perfect (los HOLD completados
+   siempre puntúan "perfect"); esto solo le añade una pequeña explosión al
+   anillo circular, ~260ms, dentro del rango pedido (150-300ms) y sin
+   bloquear nada: la nota se destruye sola 180ms después vía setTimeout,
+   igual que siempre. */
+.amaris-piano-note--hold.is-judged.is-perfect .amaris-piano-note-holdring {
+  animation: ap-holdring-complete 0.26s ease-out forwards;
+}
+
+@keyframes ap-holdring-complete {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  45% {
+    transform: scale(1.7);
+    opacity: 1;
+    box-shadow: 0 0 18px rgba(255, 233, 168, 0.95);
+  }
+  100% {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
+
+/* ---- Si se soltó demasiado pronto (punto 19) ----------------------------- */
+/* El glow/aura/anillo desaparecen de inmediato; is-miss ya hace que la nota
+   entera se desvanezca (regla existente en piano-game.css), esto solo
+   adelanta el corte de la energía para que no se note "colgada" un frame. */
+.amaris-piano-note--hold.is-judged.is-miss .amaris-piano-note-holdring,
+.amaris-piano-note--hold.is-judged.is-miss .amaris-piano-note-aura {
+  transition: opacity 0.1s ease;
+  opacity: 0 !important;
+}
+
+/* ---- Accesibilidad / rendimiento ----------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .amaris-piano-note-aura {
+    animation: none;
+  }
+  .amaris-piano-note.is-holding .amaris-piano-note-glow {
+    animation: none;
+  }
+  .amaris-piano-note--hold.is-judged.is-perfect .amaris-piano-note-holdring {
+    animation: none;
+    opacity: 0;
+  }
+}

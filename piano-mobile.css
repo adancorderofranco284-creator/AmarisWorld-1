@@ -60,6 +60,20 @@
   }
 }
 
+/* ---- Amortigua el efecto de HOLD (hold-effects.css) en táctil ----------- */
+/* Mismas animaciones, solo más lentas = más baratas para la GPU del
+   teléfono (punto 21 del pedido de mejora: nada de blur pesado ni
+   partículas continuas; aquí solo se ESTIRA la duración, no se cambia el
+   efecto). El anillo de progreso (--ap-hold-progress) no se toca: sigue
+   actualizándose exactamente igual, sin animación CSS de por medio. */
+.amaris-piano-overlay.is-touch-device .amaris-piano-note-aura {
+  animation-duration: 3.6s;
+}
+
+.amaris-piano-overlay.is-touch-device .amaris-piano-note.is-holding .amaris-piano-note-glow {
+  animation-duration: 1.5s;
+}
+
 /* ---- Pantalla "GIRA TU TELÉFONO" (punto 17 del pedido) ------------------- */
 /* Creada por piano-mobile.js SOLO cuando el juego está abierto en un
    dispositivo táctil y el teléfono está en horizontal. Cubre el juego
