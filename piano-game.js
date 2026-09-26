@@ -452,13 +452,17 @@
   // (CORS/file://) NO significa que el archivo no exista.
   function checkAmarisAudioUrl(url) {
     if (typeof fetch !== "function") return;
+    console.log("[AMARIS AUDIO] Comprobando (fetch):", url);
     fetch(url)
       .then(function (res) {
         var contentType = res.headers ? res.headers.get("content-type") : null;
-        console.log("[AMARIS AUDIO] HTTP status: " + res.status);
-        console.log("[AMARIS AUDIO] Content-Type: " + (contentType || "(no lo informó el servidor)"));
+        var contentLength = res.headers ? res.headers.get("content-length") : null;
+        console.log("[AMARIS AUDIO] status: " + res.status);
+        console.log("[AMARIS AUDIO] ok: " + res.ok);
+        console.log("[AMARIS AUDIO] content-type: " + (contentType || "(no lo informó el servidor)"));
+        console.log("[AMARIS AUDIO] content-length: " + (contentLength || "(no lo informó el servidor)"));
         if (res.status === 404) {
-          console.log("[AMARIS AUDIO] ERROR: EL ARCHIVO NO EXISTE EN ESA RUTA");
+          console.log("[AMARIS AUDIO] ERROR: EL ARCHIVO NO EXISTE EN ESA RUTA (404)");
         } else if (res.ok) {
           console.log("[AMARIS AUDIO] ARCHIVO ENCONTRADO");
           if (contentType && contentType.indexOf("audio") === -1 && contentType.indexOf("octet-stream") === -1) {
@@ -486,6 +490,28 @@
   // el problema está en el archivo/servidor o en algo del juego. Se
   // agrega abajo a la izquierda de la pantalla; si tampoco reproduce
   // ahí, el problema es 100% el archivo o su respuesta HTTP.
+  // 🔒 RESOLUCIÓN ROBUSTA DE LA URL (pedido explícito, puntos 1, 6, 7): el
+  // proyecto está publicado dentro de un subdirectorio en GitHub Pages
+  // (p. ej. https://usuario.github.io/AmarisWorld-1/), así que la URL del
+  // MP3 se resuelve SIEMPRE con new URL(ruta, document.baseURI) — nunca
+  // con una ruta absoluta que empiece en "/", que borraría el
+  // subdirectorio del proyecto. song.file (armado por
+  // piano-music-loader.js) sigue siendo la ruta RELATIVA de siempre
+  // ("assets/piano-songs/mi-cancion/Morning_in_the_Clouds.mp3", sin "/"
+  // inicial) — esta función solo la convierte a la URL absoluta final que
+  // el navegador va a pedir de verdad, para poder mostrarla y usarla de
+  // forma idéntica en el reproductor real y en "PROBAR CANCIÓN" (punto 14).
+  function resolveAudioUrl(relativePath) {
+    try {
+      return new URL(relativePath, document.baseURI).href;
+    } catch (e) {
+      // Navegador sin soporte de URL() (prácticamente inexistente hoy):
+      // se cae de vuelta a la ruta relativa de siempre, comportamiento
+      // idéntico al que ya había.
+      return relativePath;
+    }
+  }
+
   function testSongAudio(url) {
     var existing = document.getElementById("apAudioTestPlayer");
     if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
@@ -712,7 +738,7 @@
     }
 
     var audio = ensureSongAudioEl();
-    var audioUrl = song.file;
+    var audioUrl = resolveAudioUrl(song.file);
     // "folder" y "file" se separan de song.file solo para el diagnóstico
     // (song.file YA es la ruta completa que arma piano-music-loader.js;
     // esto no cambia cuál archivo se carga, solo cómo se reporta).
@@ -918,15 +944,23 @@
   function preloadSongAudio(song) {
     if (!song || !song.file) return;
     var audio = ensureSongAudioEl();
-    if (audio.dataset.apLoadedSrc === song.file) return; // ya precargada
-    audio.src = song.file;
-    audio.dataset.apLoadedSrc = song.file;
+    // 🔒 CONSISTENCIA DE URL (relacionado al punto 15 del pedido): antes
+    // esta precarga guardaba song.file (la ruta RELATIVA) en
+    // dataset.apLoadedSrc, pero switchSongAudioTo() (usada al pulsar
+    // COMENZAR) compara contra la URL YA RESUELTA con resolveAudioUrl().
+    // Como nunca eran iguales, la comparación "¿ya está cargada?" fallaba
+    // siempre y forzaba una recarga completa innecesaria al empezar. Ahora
+    // ambas usan exactamente la misma URL resuelta.
+    var resolvedUrl = resolveAudioUrl(song.file);
+    if (audio.dataset.apLoadedSrc === resolvedUrl) return; // ya precargada
+    audio.src = resolvedUrl;
+    audio.dataset.apLoadedSrc = resolvedUrl;
     try {
       audio.load();
     } catch (e) {
       /* algunos navegadores lanzan si se llama load() en un estado raro; se ignora */
     }
-    logAlways("[AMARIS PIANO] Audio source: " + song.file);
+    logAlways("[AMARIS PIANO] Audio source: " + resolvedUrl);
 
     var loggedOnce = false;
     function onLoadedOnce() {
@@ -2171,7 +2205,7 @@
         console.log("[AMARIS AUDIO] No hay ninguna canción activa para probar.");
         return null;
       }
-      return testSongAudio(song.file);
+      return testSongAudio(resolveAudioUrl(song.file));
     },
     // Fija un chart fijo para TODAS las partidas, sin importar la canción
     // activa (tiene prioridad sobre cualquier "chart" definido dentro de
