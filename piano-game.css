@@ -93,6 +93,14 @@
 .amaris-piano-modal {
   position: relative;
   width: min(400px, 92vw);
+  /* Cadena de unidades de viewport (punto 1 del pedido): un navegador que
+     no entienda una unidad simplemente ignora esa línea completa y se
+     queda con la anterior, así que van de la más compatible a la más
+     moderna/precisa. svh/lvh cubren casos donde dvh aún no está soportado
+     pero sí las unidades "small"/"large" viewport. */
+  height: min(860px, 92vh);
+  height: min(860px, 92svh);
+  height: min(860px, 92lvh);
   height: min(860px, 92dvh);
   border-radius: 40px;
   touch-action: pan-x pan-y;
@@ -385,6 +393,10 @@
   gap: 0;
   margin-top: 0;
   touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
   /* Tablero tipo Piano Tiles: degradado azul/morado/cian bien presente
      detrás de los carriles (antes era casi transparente). */
   background: linear-gradient(200deg, rgba(20, 20, 60, 0.55) 0%, rgba(60, 30, 110, 0.42) 45%, rgba(15, 60, 90, 0.4) 100%);
@@ -492,6 +504,13 @@
     0 8px 16px rgba(0, 0, 0, 0.45);
   will-change: transform;
   z-index: 3;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-drag: none;
+  user-drag: none;
 }
 
 /* Pequeño destello/estrella junto a la nota, como en la referencia. */
@@ -576,6 +595,16 @@
   box-shadow: 0 3px 10px rgba(0, 0, 0, 0.5), inset 0 0 12px rgba(0, 0, 0, 0.25);
   background: var(--ap-purple);
   z-index: 3;
+  /* La foto NUNCA debe capturar el toque: así el pointerdown siempre
+     llega a la tecla (.amaris-piano-note), sin importar en qué parte de
+     la imagen se haya tocado, y el navegador no intenta arrastrarla ni
+     ofrecer "Guardar imagen" en un toque prolongado. */
+  pointer-events: none;
+  -webkit-user-drag: none;
+  user-drag: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .amaris-piano-note--fallback {
@@ -598,6 +627,10 @@
   border: 1px solid rgba(200, 230, 255, 0.35);
   box-shadow: 0 3px 10px rgba(0, 0, 0, 0.5);
   z-index: 3;
+  pointer-events: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .amaris-piano-note.is-near .amaris-piano-note-img,
@@ -664,6 +697,28 @@
 .amaris-piano-note.is-holding .amaris-piano-note-ring {
   animation: ap-ring-pulse 0.5s ease-in-out infinite;
   filter: drop-shadow(0 0 12px rgba(127, 217, 255, 0.9));
+}
+
+/* ---- Barra de progreso del HOLD ----------------------------------------- */
+/* Se rellena de abajo hacia arriba mientras el jugador sostiene, según el
+   % de la duración MUSICAL real ya transcurrida (ver tick() en el JS).
+   Detrás de la foto (z-index menor), puramente decorativa. */
+.amaris-piano-note-holdfill {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  bottom: 4px;
+  height: 0%;
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.5), rgba(127, 217, 255, 0.32));
+  pointer-events: none;
+  z-index: 2;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.amaris-piano-note.is-holding .amaris-piano-note-holdfill {
+  opacity: 1;
 }
 
 /* ---- Golpe de acierto (cambio a la foto "hit") -------------------------- */
@@ -804,6 +859,9 @@
 
   .amaris-piano-modal {
     width: 100vw;
+    height: 100vh;
+    height: 100svh;
+    height: 100lvh;
     height: 100dvh;
     height: -webkit-fill-available;
     border-radius: 0;
@@ -863,6 +921,9 @@
     --ap-hitline-offset: 58px;
   }
   .amaris-piano-modal {
+    height: 100vh;
+    height: 100svh;
+    height: 100lvh;
     height: 100dvh;
     height: -webkit-fill-available;
   }

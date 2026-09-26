@@ -28,16 +28,22 @@
        (si hay más de una en PIANO_SONGS) que llama a esto mismo.
 
    TOQUE / TAP / HOLD:
-     Una nota puede tocarse (Pointer Events: pointerdown/up/cancel, mouse,
-     touch, stylus, y teclado 1-4) desde el instante en que aparece en
-     pantalla, no solo cuando llega a la línea de golpe — el juego mide
-     qué tan cerca está el toque del "hitTime" de la nota (ventana
-     PERFECT/GREAT configurable en CONFIG.hitWindow), sin importar dónde
-     esté visualmente cayendo. Tocar demasiado pronto no destruye la
-     nota: solo muestra "EARLY" y se puede volver a intentar. Las notas
+     Cada nota tiene su propio pointerdown/up/cancel (mouse, touch,
+     stylus, y teclado 1-4), enganchado directamente sobre su elemento
+     (bindNoteEvents) desde el instante en que se crea — es decir, desde
+     que aparece arriba de la pantalla. El toque se ACEPTA de inmediato,
+     en cualquier punto de la caída (arriba, en medio o cerca de la
+     línea): ya no existe ninguna ventana que rechace un toque por
+     "demasiado pronto". El "diff" contra el hitTime de la nota solo se
+     usa DESPUÉS de aceptar el toque, para matizar el puntaje entre
+     PERFECT y GREAT — nunca para decidir si el toque cuenta. Como
+     respaldo, el propio carril también busca la nota activa más cercana
+     en el tiempo si el toque cae justo al lado de la tecla (handleLaneHit),
+     pero la tecla tocada directamente siempre tiene prioridad. Las notas
      "hold" se inician al tocar y se completan manteniendo el dedo/tecla
      hasta el final de su duración; soltar antes de tiempo cuenta MISS.
-     Varios dedos pueden sostener/tocar notas distintas a la vez.
+     Varios dedos pueden sostener/tocar notas distintas a la vez gracias a
+     un registro pointerId → nota (state.activeHolds).
 
    PUNTO DE ENTRADA (SORPRESA):
      Este módulo también engancha, si existe en el DOM, el botón
@@ -141,7 +147,15 @@
     scoring: { perfect: 100, great: 50 },
     // Frecuencias (Hz) por carril: C4 D4 E4 G4 — sonido simple de piano.
     noteFrequencies: [261.63, 293.66, 329.63, 392.0],
-    friendAvatarColors: ["#ffb3d9", "#c9a6ff", "#ffe08a", "#8fd6ff", "#ff9a8a"]
+    friendAvatarColors: ["#ffb3d9", "#c9a6ff", "#ffe08a", "#8fd6ff", "#ff9a8a"],
+
+    // 🐢➜🐇 LONGITUD VISUAL DE LOS HOLD (independiente de su duración
+    // musical, que NUNCA se toca). Un HOLD con duration:3000 ya no se
+    // dibuja gigante durante 3s completos: su ALTURA en pantalla se
+    // multiplica por este valor. Bájalo (0.5) para HOLD más cortos/
+    // rápidos visualmente; súbelo (1.0) para HOLD más largos. No afecta
+    // en absoluto cuánto hay que sostener la tecla ni la puntuación.
+    holdLengthMultiplier: 0.65
   };
 
   /* ------------------------------------------------------------------ */
@@ -170,6 +184,11 @@
     previousActiveElement: null,
     previousHtmlOverflow: "",
     pressedKeys: {}, // lane(idx) -> bool, evita que el auto-repeat de keydown re-dispare el toque
+
+    // pointerId (o "key0".."key3") -> nota HOLD que ese dedo/tecla sostiene
+    // ahora mismo. Reemplaza cualquier bandera global tipo isHolding=true,
+    // así varios dedos pueden sostener/tocar notas distintas a la vez.
+    activeHolds: new Map(),
 
     // ---- Música de la partida (independiente del reproductor principal) --
     activeSongId: null, // fijado con AmarisPiano.setSong(); si es null, se usa DEFAULT_SONG_ID
@@ -588,6 +607,19 @@
       if (event.target === els.overlay) closeGame();
     });
 
+    // El juego debe sentirse como una app: sin menú contextual, sin
+    // selección de texto ni arrastre de imágenes al mantener presionado.
+    // Se aplica SOLO al overlay del piano, nunca al resto de la página.
+    els.overlay.addEventListener("contextmenu", function (event) {
+      event.preventDefault();
+    });
+    els.overlay.addEventListener("selectstart", function (event) {
+      event.preventDefault();
+    });
+    els.overlay.addEventListener("dragstart", function (event) {
+      event.preventDefault();
+    });
+
     // Carriles: Pointer Events completos (no solo "click"/pointerdown),
     // para soportar TAP y HOLD con varios dedos a la vez. Cada carril
     // captura su propio pointerId al bajar el dedo (setPointerCapture),
@@ -698,6 +730,16 @@
     ring.className = "amaris-piano-note-ring";
     wrap.appendChild(ring);
 
+    // Indicador de progreso mientras se sostiene un HOLD (punto 7 del
+    // pedido): una barra que se rellena de abajo hacia arriba conforme
+    // avanza la duración musical. Solo existe en notas HOLD; no toca ni
+    // afecta a las TAP en absoluto.
+    if (type === "hold") {
+      var fill = document.createElement("span");
+      fill.className = "amaris-piano-note-holdfill";
+      wrap.appendChild(fill);
+    }
+
     var img = document.createElement("img");
     img.className = "amaris-piano-note-img";
     img.alt = "";
@@ -750,7 +792,14 @@
 
     var friend = FRIENDS[friendIndex % FRIENDS.length] || null;
     var metrics = state.laneMetrics || { travelBase: 300, tapHeightPx: 95, pxPerMs: 300 / CONFIG.fallDuration };
-    var heightPx = type === "hold" ? Math.max(metrics.tapHeightPx, durationMs * metrics.pxPerMs) : metrics.tapHeightPx;
+
+    // LONGITUD VISUAL vs DURACIÓN MUSICAL (punto 6 del pedido): "durationMs"
+    // sigue siendo exactamente lo que decide cuánto hay que sostener la
+    // tecla (holdDeadline, más abajo) y nunca se modifica. Lo único que
+    // cambia con holdLengthMultiplier es la ALTURA con la que se dibuja
+    // el bloque, para que un HOLD largo no se sienta eterno en pantalla.
+    var visualDurationMs = type === "hold" ? durationMs * CONFIG.holdLengthMultiplier : 0;
+    var heightPx = type === "hold" ? Math.max(metrics.tapHeightPx, visualDurationMs * metrics.pxPerMs) : metrics.tapHeightPx;
     var travelPx = Math.max(40, metrics.travelBase - heightPx);
 
     var el = createNoteElement(friendIndex, type);
@@ -761,7 +810,7 @@
       lane: lane,
       friend: friend,
       type: type,
-      duration: durationMs,
+      duration: durationMs, // duración MUSICAL real, intacta
       spawnTime: hitAtMs - CONFIG.fallDuration,
       hitTime: hitAtMs,
       judged: false,
@@ -769,8 +818,13 @@
       holdPointerId: null, // pointerId (o "key0".."key3") que la está sosteniendo
       holdDeadline: hitAtMs + durationMs,
       travelPx: travelPx,
+      // Referencia directa a la barra de progreso (o null en TAP), guardada
+      // una sola vez aquí para no tener que buscarla con querySelector en
+      // cada frame de tick() — importante para mantener 60 FPS en móvil.
+      fillEl: type === "hold" ? el.querySelector(".amaris-piano-note-holdfill") : null,
       el: el
     };
+    bindNoteEvents(note);
     els.lanes[lane].appendChild(el);
     state.notes.push(note);
   }
@@ -879,6 +933,9 @@
     note.judged = true;
     note.holdActive = false;
     note.el.classList.remove("is-holding");
+    if (note.holdPointerId !== null && note.holdPointerId !== undefined) {
+      state.activeHolds.delete(note.holdPointerId);
+    }
     var laneEl = els.lanes[note.lane];
 
     if (kind === "perfect" || kind === "great") {
@@ -942,39 +999,35 @@
     return best;
   }
 
-  // pointerId identifica qué dedo (o qué tecla: "key0".."key3") originó el
-  // toque — necesario para poder sostener un HOLD con un dedo mientras
-  // otro dedo toca notas en otro carril (punto 5).
-  function handleLaneHit(lane, pointerId) {
-    if (state.screen !== "playing") return;
+  // ÚNICO punto de entrada que decide qué pasa cuando el jugador "activa"
+  // una nota concreta — sin importar si el pointerdown ocurrió
+  // directamente sobre la tecla (prioridad 1, ver bindNoteEvents) o llegó
+  // como respaldo desde el carril (prioridad 2, ver handleLaneHit).
+  //
+  // REGLA CLAVE (punto 14 del pedido): la posición/tiempo de la nota
+  // NUNCA decide si el toque se recibe. PRIMERO se recibe el input y se
+  // activa la nota; el "diff" contra hitTime se usa ÚNICAMENTE para
+  // matizar el puntaje (PERFECT si el toque cae cerca del tiempo musical,
+  // GREAT en cualquier otro caso). Ya no existe una ventana que rechace
+  // el toque por "demasiado pronto": eso era, en la práctica, lo que
+  // hacía que la tecla solo respondiera cerca de la línea inferior,
+  // porque el tiempo de vuelo de una nota está perfectamente sincronizado
+  // con su posición vertical.
+  function handleNoteHit(note, pointerId) {
+    if (note.judged) return;
+
     var elapsed = getElapsedMs();
-    var best = findActiveNoteInLane(lane, elapsed);
-    if (!best) return; // toque sin nota activa en este carril: no penaliza, no pasa nada
+    var diff = elapsed - note.hitTime;
 
-    var diff = elapsed - best.hitTime;
-
-    // Demasiado pronto: NO se destruye la nota, se avisa "EARLY" y queda
-    // activa para poder volver a tocarla cuando entre en la ventana
-    // válida (punto 6, opción preferida por el usuario).
-    if (diff < -CONFIG.hitWindow.great) {
-      showFeedback("EARLY", "early");
-      return;
-    }
-
-    // Demasiado tarde (resguardo: en teoría tick() ya la habría marcado
-    // MISS antes de que esto pudiera ocurrir).
-    if (diff > CONFIG.hitWindow.great) {
-      judgeNote(best, "miss");
-      return;
-    }
-
-    if (best.type === "hold") {
-      best.holdActive = true;
-      best.holdPointerId = pointerId;
-      showHitImage(best);
-      best.el.classList.add("is-holding", "is-hit");
+    if (note.type === "hold") {
+      if (note.holdActive) return; // ya la está sosteniendo otro dedo/tecla
+      note.holdActive = true;
+      note.holdPointerId = pointerId;
+      state.activeHolds.set(pointerId, note);
+      showHitImage(note);
+      note.el.classList.add("is-holding", "is-hit");
       flashHitline();
-      playPianoNote(best.lane);
+      playPianoNote(note.lane);
       if (navigator.vibrate) {
         try {
           navigator.vibrate(10);
@@ -986,25 +1039,71 @@
     }
 
     var kind = Math.abs(diff) <= CONFIG.hitWindow.perfect ? "perfect" : "great";
-    judgeNote(best, kind);
+    judgeNote(note, kind);
   }
 
-  // Soltar el dedo/tecla que sostenía un HOLD. Si se suelta demasiado
-  // pronto (antes de holdDeadline, con un pequeño margen de tolerancia),
-  // el HOLD falla como MISS; si se sostuvo lo suficiente, se completa como
-  // acierto. Es idempotente: si ese pointerId no estaba sosteniendo nada
-  // (o la nota ya fue juzgada), simplemente no hace nada — seguro de
-  // llamar desde varios listeners distintos (pointerup/cancel/leave).
-  function releaseHold(pointerId, isCancel) {
-    var note = null;
-    for (var i = 0; i < state.notes.length; i++) {
-      var n = state.notes[i];
-      if (!n.judged && n.type === "hold" && n.holdActive && n.holdPointerId === pointerId) {
-        note = n;
-        break;
+  // RESPALDO (prioridad 2, punto 15): solo se usa cuando el toque llegó al
+  // carril pero no directamente sobre ninguna tecla (p. ej. el pequeño
+  // margen alrededor de una nota angosta). Nunca "roba" el toque de otra
+  // nota ya manejada por su propio listener (ver bindNoteEvents, que
+  // detiene la propagación), y nunca mira en qué carril NO fue el toque.
+  function handleLaneHit(lane, pointerId) {
+    if (state.screen !== "playing") return;
+    var elapsed = getElapsedMs();
+    var best = findActiveNoteInLane(lane, elapsed);
+    if (!best) return; // toque sin nota activa en este carril: no penaliza, no pasa nada
+    handleNoteHit(best, pointerId);
+  }
+
+  // Enlaza pointerdown/pointerup/pointercancel DIRECTAMENTE sobre el
+  // elemento de la nota (punto 3 y 8 del pedido): así el jugador toca la
+  // propia tecla, en cualquier parte de su superficie, no solo el carril.
+  // Cada nota se cierra sobre su propio objeto "note" (closure), así que
+  // no hace falta ninguna búsqueda: el pointerdown activa ESA nota, ya.
+  function bindNoteEvents(note) {
+    var el = note.el;
+
+    el.addEventListener("pointerdown", function (event) {
+      if (state.screen !== "playing" || note.judged) return;
+      if (note.type === "hold" && note.holdActive) return;
+      event.preventDefault();
+      // Detiene la propagación al carril: la tecla tocada directamente
+      // tiene prioridad absoluta sobre la búsqueda de respaldo del carril.
+      event.stopPropagation();
+      try {
+        el.setPointerCapture(event.pointerId);
+      } catch (e) {
+        /* algunos navegadores/tipos de puntero no soportan capture; se ignora */
       }
-    }
+      handleNoteHit(note, event.pointerId);
+    });
+
+    el.addEventListener("pointerup", function (event) {
+      event.preventDefault();
+      event.stopPropagation();
+      releaseHold(event.pointerId, false);
+    });
+
+    el.addEventListener("pointercancel", function (event) {
+      event.stopPropagation();
+      releaseHold(event.pointerId, true);
+    });
+  }
+
+  // Soltar el dedo/tecla que sostenía un HOLD. Usa el Map activeHolds
+  // (pointerId → nota), así varios dedos pueden sostener HOLDs distintos
+  // sin pisarse entre sí (punto 7). Si se suelta demasiado pronto (antes
+  // de holdDeadline, con un pequeño margen de tolerancia), el HOLD falla
+  // como MISS; si se sostuvo lo suficiente, se completa como acierto. Es
+  // idempotente: si ese pointerId no estaba sosteniendo nada (o la nota
+  // ya fue juzgada, p. ej. porque tick() ya la completó por tiempo),
+  // simplemente no hace nada — seguro de llamar desde varios listeners
+  // distintos (pointerup/cancel/leave, tanto de la nota como del carril).
+  function releaseHold(pointerId, isCancel) {
+    var note = state.activeHolds.get(pointerId);
     if (!note) return;
+    state.activeHolds.delete(pointerId);
+    if (note.judged || !note.holdActive) return;
 
     var elapsed = getElapsedMs();
     note.holdActive = false;
@@ -1029,13 +1128,29 @@
       if (note.judged) return;
       allDone = false;
 
-      // Misma velocidad de caída siempre (sin acelerar tras la línea):
-      // así una nota HOLD sostenida sigue moviéndose de forma natural y
-      // predecible mientras se mantiene presionada.
+      // Misma velocidad de caída siempre (sin acelerar tras la línea).
+      // BUG FIX: el progreso se limita a 1 (nunca pasa de la línea): antes,
+      // un HOLD largo sostenido más allá de "fallDuration" seguía
+      // deslizándose hacia abajo indefinidamente, saliéndose del tablero.
+      // Ahora el bloque queda fijo justo en la línea mientras se sostiene,
+      // como en un juego de ritmo real. translate3d en vez de translateY
+      // para que el navegador use aceleración por GPU (mejor rendimiento
+      // en teléfonos).
       var progress = (elapsed - note.spawnTime) / CONFIG.fallDuration;
-      note.el.style.transform = "translateY(" + Math.max(0, progress) * note.travelPx + "px)";
+      if (progress > 1) progress = 1;
+      if (progress < 0) progress = 0;
+      note.el.style.transform = "translate3d(0, " + (progress * note.travelPx).toFixed(1) + "px, 0)";
 
       if (note.type === "hold" && note.holdActive) {
+        // Barra de progreso del HOLD (punto 7): se rellena de 0% a 100%
+        // conforme avanza la duración MUSICAL real (note.duration), sin
+        // relación con la altura visual reducida por holdLengthMultiplier.
+        if (note.fillEl && note.duration > 0) {
+          var holdProgress = (elapsed - note.hitTime) / note.duration;
+          if (holdProgress < 0) holdProgress = 0;
+          if (holdProgress > 1) holdProgress = 1;
+          note.fillEl.style.height = (holdProgress * 100).toFixed(1) + "%";
+        }
         // Mientras se sostiene, no aplica el corte de MISS por tiempo:
         // solo importa si se llegó a la duración completa.
         if (elapsed >= note.holdDeadline) {
@@ -1107,6 +1222,7 @@
         state.nextSpawnIn = CONFIG.spawnInterval.min;
         state.chartIndex = 0;
         state.pressedKeys = {};
+        state.activeHolds.clear();
 
         // Chart efectivo: el fijado explícitamente con setChart() manda
         // siempre; si no hay ninguno, se usa el de la canción activa (si
@@ -1166,6 +1282,7 @@
     state.missCount = 0;
     state.chartIndex = 0;
     state.pressedKeys = {};
+    state.activeHolds.clear();
     updateHUD();
     showScreen("start");
   }
