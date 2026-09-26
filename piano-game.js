@@ -442,20 +442,34 @@
     }
   }
 
-  // Comprobación de diagnóstico (punto 2 del pedido): un HEAD a la URL
-  // final del audio, SOLO para saber si el archivo existe en esa ruta
-  // exacta. Nunca decide nada por sí sola (audio.play() sigue intentando
-  // igual, sin esperar a este resultado) — es puramente informativa,
-  // porque un fetch bloqueado (CORS/file://) NO significa que el archivo
-  // no exista.
+  // Comprobación de diagnóstico (puntos 1-2 del pedido): un GET a la URL
+  // final del audio para conocer, a la vez, el status HTTP real y el
+  // Content-Type que devuelve el servidor (GitHub Pages incluido) — un
+  // HEAD no siempre expone Content-Type de forma fiable en todos los
+  // hosts estáticos, por eso se usa GET aquí. Nunca decide nada por sí
+  // sola (audio.play() sigue intentando igual, sin esperar a este
+  // resultado) — es puramente informativa, porque un fetch bloqueado
+  // (CORS/file://) NO significa que el archivo no exista.
   function checkAmarisAudioUrl(url) {
     if (typeof fetch !== "function") return;
-    fetch(url, { method: "HEAD" })
+    fetch(url)
       .then(function (res) {
+        var contentType = res.headers ? res.headers.get("content-type") : null;
+        console.log("[AMARIS AUDIO] HTTP status: " + res.status);
+        console.log("[AMARIS AUDIO] Content-Type: " + (contentType || "(no lo informó el servidor)"));
         if (res.status === 404) {
           console.log("[AMARIS AUDIO] ERROR: EL ARCHIVO NO EXISTE EN ESA RUTA");
         } else if (res.ok) {
           console.log("[AMARIS AUDIO] ARCHIVO ENCONTRADO");
+          if (contentType && contentType.indexOf("audio") === -1 && contentType.indexOf("octet-stream") === -1) {
+            console.log(
+              "[AMARIS AUDIO] AVISO: el servidor devolvió Content-Type '" +
+                contentType +
+                "', que no es de audio. Es probable que la URL esté devolviendo otra cosa " +
+                "(por ejemplo una página 404 de GitHub Pages con status 200, o el archivo equivocado), " +
+                "no el MP3 en sí."
+            );
+          }
         } else {
           console.log("[AMARIS AUDIO] RESPUESTA HTTP " + res.status + " AL COMPROBAR EL ARCHIVO");
         }
@@ -465,6 +479,29 @@
         // no exista, así que se reporta como lo que es, sin adivinar.
         console.log("[AMARIS AUDIO] FETCH BLOQUEADO");
       });
+  }
+
+  // Prueba directa (punto 9 del pedido): un <audio controls> REAL, sin
+  // ninguna lógica del juego de por medio, para saber de un vistazo si
+  // el problema está en el archivo/servidor o en algo del juego. Se
+  // agrega abajo a la izquierda de la pantalla; si tampoco reproduce
+  // ahí, el problema es 100% el archivo o su respuesta HTTP.
+  function testSongAudio(url) {
+    var existing = document.getElementById("apAudioTestPlayer");
+    if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
+    var testAudio = document.createElement("audio");
+    testAudio.id = "apAudioTestPlayer";
+    testAudio.src = url;
+    testAudio.controls = true;
+    testAudio.style.cssText =
+      "position:fixed;left:12px;bottom:12px;z-index:99999;max-width:90vw;" +
+      "background:#0a0b16;border-radius:8px;padding:4px;";
+    document.body.appendChild(testAudio);
+    console.log(
+      "[AMARIS AUDIO] Reproductor de prueba agregado abajo a la izquierda de la pantalla. " +
+        "Si al pulsar ▶ ahí TAMPOCO suena, el problema es el archivo/servidor, no el código del juego."
+    );
+    return testAudio;
   }
 
   function ensureSongAudioEl() {
@@ -559,6 +596,11 @@
   function hideAudioError() {
     window.clearTimeout(state.audioErrorHideTimer);
     if (els.audioError) els.audioError.hidden = true;
+    // Limpia el reproductor de prueba temporal (punto 9) si seguía en
+    // pantalla de un intento fallido anterior — ya no hace falta una vez
+    // que la canción real está sonando o se vuelve a intentar.
+    var testPlayer = document.getElementById("apAudioTestPlayer");
+    if (testPlayer && testPlayer.parentNode) testPlayer.parentNode.removeChild(testPlayer);
   }
 
   function stopSongAudio() {
@@ -624,14 +666,29 @@
   // partida puede continuar con el reloj de respaldo (performance.now(),
   // ver getElapsedMs()) en vez de quedarse congelada para siempre por un
   // mp3 ausente.
-  function startActiveSongAndThen(callback) {
+  // Selecciona la canción activa, la carga y la reproduce EXCLUSIVAMENTE
+  // mediante HTMLAudioElement (ver ensureSongAudioEl más arriba).
+  //
+  // 🔒 CAMBIO DE COMPORTAMIENTO (pedido explícito): esta función YA NO
+  // llama a un único "callback" pase lo que pase. Ahora recibe DOS:
+  //   onSuccess() → SOLO si audio.play() se resolvió de verdad (evento
+  //                 "playing" real). Aquí es seguro iniciar el juego.
+  //   onFailure(info) → si audio.play() fue rechazado o el audio disparó
+  //                 "error". El juego NO debe arrancar en este caso —
+  //                 startGame() se encarga de eso, no esta función.
+  // La ÚNICA excepción sigue siendo "no hay ninguna canción registrada en
+  // absoluto" (PIANO_SONGS vacío y nada añadido por addSong): eso NO es un
+  // fallo de reproducción, es un piano sin música por diseño, así que ahí
+  // sí se llama a onSuccess() para que el generador automático de notas
+  // funcione, como siempre.
+  function startActiveSongAndThen(onSuccess, onFailure) {
     var song = getActiveSong();
     state.songAudioFailed = false;
     hideAudioError();
 
     if (!song) {
       logAlways("[AMARIS PIANO] No hay ninguna canción registrada; la partida usa el reloj de respaldo.");
-      callback();
+      onSuccess();
       return;
     }
 
@@ -653,8 +710,8 @@
     console.log("[AMARIS AUDIO] FILE: " + diagFile);
     console.log("[AMARIS AUDIO] FINAL URL: " + audioUrl);
 
-    // Diagnóstico de existencia (punto 2 del pedido) — no bloquea ni
-    // decide nada, corre en paralelo a audio.play() de abajo.
+    // Diagnóstico de existencia + Content-Type (puntos 1-2 del pedido) —
+    // no bloquea ni decide nada, corre en paralelo a audio.play() de abajo.
     checkAmarisAudioUrl(audioUrl);
 
     switchSongAudioTo(audio, audioUrl);
@@ -666,10 +723,11 @@
 
     if (!playPromise || typeof playPromise.then !== "function") {
       // Navegador muy antiguo sin Promise en HTMLMediaElement.play(): no
-      // hay forma de confirmar el éxito de forma asíncrona, así que se
-      // continúa igual que se hacía antes (el evento "playing"/"error"
-      // permanente de ensureSongAudioEl sigue dejando rastro en consola).
-      callback();
+      // hay forma de confirmar el éxito de forma asíncrona. Se trata como
+      // éxito optimista (comportamiento de siempre en ese caso límite),
+      // el evento "playing"/"error" permanente de ensureSongAudioEl sigue
+      // dejando rastro en consola de lo que pasó de verdad.
+      onSuccess();
       return;
     }
 
@@ -678,16 +736,17 @@
         // El evento "playing" (listener permanente) ya logueó
         // "[AMARIS PIANO] AUDIO PLAYING" y ocultó cualquier banner previo.
         state.songAudioFailed = false;
-        callback();
+        onSuccess();
       })
       .catch(function (err) {
         state.songAudioFailed = true;
         var mediaError = audio.error;
+        var code = mediaError ? mediaError.code : null;
         var rejectionName = err && err.name; // p. ej. "NotAllowedError", "NotSupportedError"
         console.error("[AMARIS PIANO] ERROR DE AUDIO:", {
           src: audio.currentSrc || audio.src,
           playRejection: err && (err.message || String(err)),
-          errorCode: mediaError ? mediaError.code : null,
+          errorCode: code,
           errorMessage: mediaError ? mediaError.message : null,
           readyState: audio.readyState,
           networkState: audio.networkState,
@@ -699,10 +758,7 @@
         console.log("[AMARIS AUDIO] nombre del rechazo: " + (rejectionName || "(sin nombre)"));
         if (mediaError) {
           console.log(
-            "[AMARIS AUDIO] audio.error: código " +
-              mediaError.code +
-              " = " +
-              mediaErrorCodeName(mediaError.code)
+            "[AMARIS AUDIO] audio.error: código " + code + " = " + mediaErrorCodeName(code)
           );
         } else {
           console.log(
@@ -713,10 +769,32 @@
           );
         }
         logAmarisAudio("play() rechazado");
-        mostrarErrorDeAudio("La canción \u201c" + (song.name || song.id) + "\u201d no pudo reproducirse.");
-        // La partida sigue (con el reloj de respaldo), pero el fallo
-        // queda visible en pantalla y en consola — nunca en silencio.
-        callback();
+
+        // Mensaje específico cuando el código es MEDIA_ERR_SRC_NOT_SUPPORTED
+        // (punto 8 del pedido): no basta con "no pudo reproducirse".
+        if (code === 4) {
+          mostrarErrorDeAudio(
+            "La canción \u201c" + (song.name || song.id) + "\u201d fue encontrada, pero el navegador " +
+              "no puede reproducir este archivo de audio.\nError multimedia: MEDIA_ERR_SRC_NOT_SUPPORTED (4)"
+          );
+        } else if (code === 3) {
+          mostrarErrorDeAudio(
+            "El navegador encontró el archivo pero no pudo decodificarlo.\nError multimedia: " +
+              "MEDIA_ERR_DECODE (3)"
+          );
+        } else {
+          mostrarErrorDeAudio("La canción \u201c" + (song.name || song.id) + "\u201d no pudo reproducirse.");
+        }
+
+        // Prueba directa (punto 9): reproductor nativo aparte, sin
+        // ninguna lógica del juego, para descartar de un solo golpe si
+        // el problema es el archivo/servidor o el propio código.
+        testSongAudio(audioUrl);
+
+        // 🔒 El juego NO arranca con un audio fallido (pedido explícito):
+        // ni notas, ni contador, ni chart. onFailure() se lo comunica a
+        // startGame(), que vuelve a la pantalla de inicio.
+        onFailure({ code: code, rejectionName: rejectionName });
       });
   }
 
@@ -1008,7 +1086,7 @@
       "font-family:'Jost',sans-serif;font-size:12px;line-height:1.4;" +
       "padding:10px 14px;border-radius:10px;text-align:center;" +
       "box-shadow:0 4px 14px rgba(0,0,0,0.4);";
-    els.audioErrorText.style.cssText = "display:block;margin-bottom:8px;";
+    els.audioErrorText.style.cssText = "display:block;margin-bottom:8px;white-space:pre-line;";
     // Botón de diagnóstico TEMPORAL (punto 7 del pedido): fuerza
     // audio.currentTime = 0; audio.play() directo, en respuesta a un
     // clic real del usuario, para descartar de un solo golpe si el
@@ -1816,69 +1894,79 @@
 
     buildDOM();
 
-    // 1) Mostrar la pantalla de juego PRIMERO. Medir el layout (paso 3)
-    //    mientras la pantalla sigue con display:none siempre da 0 —
-    //    por eso measureLaneMetrics() se movió después de showScreen().
-    showScreen("playing");
-    updateHUD();
-    window.cancelAnimationFrame(state.rafId);
+    // 🔒 CAMBIO DE COMPORTAMIENTO (pedido explícito, pasos 5-7): la
+    // pantalla de juego YA NO se muestra por adelantado. Se espera a
+    // saber si el audio realmente arrancó antes de mostrar carriles,
+    // iniciar el contador o generar la primera nota. Así, si el audio
+    // falla, el jugador nunca ve el juego "a medias" — sigue en la
+    // pantalla de inicio con el error visible.
+    startActiveSongAndThen(
+      // ---- ÉXITO: el audio (o el modo sin canción) está confirmado ----
+      function onSongReady() {
+        showScreen("playing");
+        updateHUD();
+        window.cancelAnimationFrame(state.rafId);
 
-    // 2) Seleccionar + cargar + reproducir la canción de esta partida.
-    //    startActiveSongAndThen() llama al callback en cuanto la música
-    //    arranca de verdad (o a los 400ms si no hay/fallo el mp3), así el
-    //    reloj de la partida queda sincronizado con el inicio real del audio.
-    startActiveSongAndThen(function () {
-      // 3) Esperar a que el navegador pinte el cambio de pantalla (un
-      //    frame) antes de calcular dimensiones reales.
-      window.requestAnimationFrame(function () {
-        // 4) Calcular dimensiones reales / posición de la línea de precisión
-        measureLaneMetrics();
+        // Esperar a que el navegador pinte el cambio de pantalla (un
+        // frame) antes de calcular dimensiones reales.
+        window.requestAnimationFrame(function () {
+          // Calcular dimensiones reales / posición de la línea de precisión
+          measureLaneMetrics();
 
-        // 5) Inicializar el reloj de la partida y las notas. gameStartTime
-        //    sigue existiendo como respaldo (getElapsedMs() lo usa si no
-        //    hay canción sonando); lastSpawnTime/nextSpawnIn ahora viven
-        //    en el mismo dominio "ms transcurridos" que usa getElapsedMs(),
-        //    así que empiezan en 0, no en performance.now().
-        state.gameStartTime = performance.now();
-        state.lastSpawnTime = 0;
-        state.nextSpawnIn = CONFIG.spawnInterval.min;
-        state.lastDebugLogAt = 0;
-        state.chartIndex = 0;
-        state.pressedKeys = {};
-        state.activeHolds.clear();
+          // Inicializar el reloj de la partida y las notas. gameStartTime
+          // sigue existiendo como respaldo (getElapsedMs() lo usa si no
+          // hay canción sonando); lastSpawnTime/nextSpawnIn ahora viven
+          // en el mismo dominio "ms transcurridos" que usa getElapsedMs(),
+          // así que empiezan en 0, no en performance.now().
+          state.gameStartTime = performance.now();
+          state.lastSpawnTime = 0;
+          state.nextSpawnIn = CONFIG.spawnInterval.min;
+          state.lastDebugLogAt = 0;
+          state.chartIndex = 0;
+          state.pressedKeys = {};
+          state.activeHolds.clear();
 
-        // Chart efectivo: el fijado explícitamente con setChart() manda
-        // siempre; si no hay ninguno, se usa el de la canción activa (si
-        // esta define uno); si tampoco hay, se mantiene la generación
-        // automática de notas ya existente, sin cambios.
-        var song = getActiveSong();
-        var songChart = song && Array.isArray(song.chart) ? song.chart : null;
-        state.chart = state.externalChart
-          ? state.externalChart
-          : songChart
-          ? songChart.slice().sort(function (a, b) {
-              return a.time - b.time;
-            })
-          : null;
+          // Chart efectivo: el fijado explícitamente con setChart() manda
+          // siempre; si no hay ninguno, se usa el de la canción activa (si
+          // esta define uno); si tampoco hay, se mantiene la generación
+          // automática de notas ya existente, sin cambios.
+          var song = getActiveSong();
+          var songChart = song && Array.isArray(song.chart) ? song.chart : null;
+          state.chart = state.externalChart
+            ? state.externalChart
+            : songChart
+            ? songChart.slice().sort(function (a, b) {
+                return a.time - b.time;
+              })
+            : null;
 
-        if (state.chart) {
-          logAlways("[AMARIS PIANO] Chart loaded: " + state.chart.length + " notas (" +
-            (state.externalChart ? "chart externo" : "chart de " + (song ? song.name || song.id : "canción")) + ")");
-        } else {
-          logAlways("[AMARIS PIANO] Chart loaded: ninguno — generación automática de notas");
-        }
+          if (state.chart) {
+            logAlways("[AMARIS PIANO] Chart loaded: " + state.chart.length + " notas (" +
+              (state.externalChart ? "chart externo" : "chart de " + (song ? song.name || song.id : "canción")) + ")");
+          } else {
+            logAlways("[AMARIS PIANO] Chart loaded: ninguno — generación automática de notas");
+          }
 
-        // 🔒 El análisis de energía del audio (createMediaElementSource +
-        // AnalyserNode) se eliminó por completo — ver ensureSongAudioEl()
-        // para el detalle: era la causa raíz de que la canción principal
-        // se quedara muda. La canción ya está sonando en este punto por
-        // HTMLAudioElement puro, sin ningún enganche a Web Audio API.
+          // 🔒 El análisis de energía del audio (createMediaElementSource +
+          // AnalyserNode) se eliminó por completo — ver ensureSongAudioEl()
+          // para el detalle: era la causa raíz de que la canción principal
+          // se quedara muda. La canción ya está sonando en este punto por
+          // HTMLAudioElement puro, sin ningún enganche a Web Audio API.
 
-        // 6) Iniciar requestAnimationFrame → 7) comienza el juego
-        state.isStarting = false; // la partida ya arrancó de verdad
-        state.rafId = window.requestAnimationFrame(tick);
-      });
-    });
+          // Iniciar requestAnimationFrame → comienza el juego
+          state.isStarting = false; // la partida ya arrancó de verdad
+          state.rafId = window.requestAnimationFrame(tick);
+        });
+      },
+      // ---- FALLO: el audio no arrancó. El juego NO empieza. ----
+      function onSongFailed() {
+        state.isStarting = false;
+        // Se queda (o vuelve a) la pantalla de inicio, con el banner de
+        // error y el reproductor de prueba ya visibles (los puso
+        // startActiveSongAndThen). Nada de notas, contador ni chart.
+        showScreen("start");
+      }
+    );
   }
 
   function endGame() {
@@ -2027,6 +2115,17 @@
     close: closeGame,
     start: startGame,
     reset: resetGame,
+    // Prueba directa temporal (punto 9 del pedido): agrega un
+    // <audio controls> real, sin ninguna lógica del juego, con la URL de
+    // la canción activa. Útil desde la consola: AmarisPiano.testSongAudio()
+    testSongAudio: function () {
+      var song = getActiveSong();
+      if (!song) {
+        console.log("[AMARIS AUDIO] No hay ninguna canción activa para probar.");
+        return null;
+      }
+      return testSongAudio(song.file);
+    },
     // Fija un chart fijo para TODAS las partidas, sin importar la canción
     // activa (tiene prioridad sobre cualquier "chart" definido dentro de
     // PIANO_SONGS). Pasa null para volver a dejar que cada canción (o el
