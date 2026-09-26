@@ -1397,6 +1397,26 @@
     // Si el id no existe, no hace nada (se queda con la canción anterior).
     setSong: function (id) {
       if (getSongById(id)) state.activeSongId = id;
+    },
+
+    // ---- Añadido SOLO para piano-mobile.js (capa de adaptación móvil) --
+    // Ninguno de estos 4 métodos cambia, duplica ni reemplaza nada del
+    // GAME CORE: son accesos de lectura/utilidad para que el adaptador
+    // móvil pueda reaccionar (recalcular tamaños, saber si el juego está
+    // abierto/jugando) sin tocar el estado interno directamente.
+    recalcLayout: function () {
+      // Misma measureLaneMetrics() que ya usa el juego en PC al abrir,
+      // redimensionar o rotar — no es un segundo cálculo de layout.
+      if (state.built && state.screen === "playing") measureLaneMetrics();
+    },
+    isOpen: function () {
+      return !!(els.overlay && els.overlay.classList.contains("is-open"));
+    },
+    isPlaying: function () {
+      return state.screen === "playing";
+    },
+    getOverlayElement: function () {
+      return els.overlay || null;
     }
   };
 

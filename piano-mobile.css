@@ -1,0 +1,117 @@
+/* ==========================================================================
+   AMARIS WORLD — piano-mobile.css
+   Capa de adaptación MÓVIL de Amaris Piano. Se carga DESPUÉS de
+   piano-game.css?v=3 en index.html, así que solo puede AÑADIR o REFINAR
+   reglas — ni una sola línea de piano-game.css se modifica ni se
+   sobrescribe fuera de lo que se declara aquí explícitamente. La versión
+   de PC/base queda intacta.
+
+   Todo (salvo la pantalla de rotación) vive bajo el selector
+   .amaris-piano-overlay.is-touch-device — clase que agrega piano-mobile.js
+   SOLO en dispositivos con capacidades táctiles (navigator.maxTouchPoints),
+   nunca por ancho de pantalla. Así una laptop con mouse nunca ve estos
+   ajustes, y un teléfono los ve incluso si por accidente tuviera una
+   ventana ancha (p. ej. en modo escritorio de un navegador móvil).
+   ========================================================================== */
+
+/* ---- Objetivos táctiles más grandes (punto 4 del pedido) ---------------- */
+/* No cambia el tamaño VISUAL de la tecla (--ap-note-size sigue igual, para
+   no romper el diseño ya conseguido en PC): amplía el ÁREA DE TOQUE
+   alrededor de cada nota con un pseudo-elemento invisible, más fácil de
+   acertar con el dedo sin desalinear las notas entre sí ni tapar la foto. */
+.amaris-piano-overlay.is-touch-device .amaris-piano-note::before {
+  content: "";
+  position: absolute;
+  inset: -10px;
+  z-index: 1;
+  pointer-events: none; /* el toque lo sigue recibiendo la nota misma */
+}
+
+.amaris-piano-overlay.is-touch-device .amaris-piano-close {
+  width: 42px;
+  height: 42px;
+}
+
+.amaris-piano-overlay.is-touch-device .amaris-piano-btn {
+  min-height: 50px;
+}
+
+.amaris-piano-overlay.is-touch-device .amaris-piano-song-btn {
+  padding: 9px 16px;
+  font-size: 13px;
+}
+
+/* ---- Rendimiento en móvil (punto 18 del pedido) -------------------------- */
+/* Reduce el costo de blur/animación de fondo SOLO en táctil, sin quitar
+   el diseño (el degradado, la composición y los colores siguen iguales;
+   solo se abarata lo puramente decorativo). */
+.amaris-piano-overlay.is-touch-device .amaris-piano-modal {
+  backdrop-filter: blur(10px) saturate(1.1);
+  -webkit-backdrop-filter: blur(10px) saturate(1.1);
+}
+
+.amaris-piano-overlay.is-touch-device .amaris-piano-bgstar {
+  animation-duration: 4.5s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .amaris-piano-overlay.is-touch-device .amaris-piano-bgstar {
+    animation: none;
+  }
+}
+
+/* ---- Pantalla "GIRA TU TELÉFONO" (punto 17 del pedido) ------------------- */
+/* Creada por piano-mobile.js SOLO cuando el juego está abierto en un
+   dispositivo táctil y el teléfono está en horizontal. Cubre el juego
+   visualmente (para que no se toquen carriles sin querer) pero el GAME
+   CORE sigue corriendo exactamente igual debajo: al volver a vertical la
+   partida continúa donde iba, sin reiniciar música/score/combo/notas. */
+.amaris-mobile-rotate {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  text-align: center;
+  background: rgba(10, 11, 22, 0.94);
+  font-family: "Jost", sans-serif;
+  color: #f4e9ff;
+}
+
+.amaris-mobile-rotate.is-visible {
+  display: flex;
+}
+
+.amaris-mobile-rotate-icon {
+  font-size: 42px;
+  color: var(--ap-gold-strong, #ffe9a8);
+  animation: amaris-mobile-rotate-spin 1.6s ease-in-out infinite;
+}
+
+.amaris-mobile-rotate-text {
+  font-family: "Press Start 2P", monospace;
+  font-size: 14px;
+  letter-spacing: 0.5px;
+  margin: 0;
+}
+
+.amaris-mobile-rotate-sub {
+  font-size: 13px;
+  color: rgba(244, 233, 255, 0.7);
+  margin: 0;
+}
+
+@keyframes amaris-mobile-rotate-spin {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(-90deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .amaris-mobile-rotate-icon {
+    animation: none;
+  }
+}
