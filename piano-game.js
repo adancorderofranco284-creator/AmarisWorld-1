@@ -33,7 +33,7 @@
      window.AmarisPiano.addSong(song) → registra una canción MÁS, además
        de las ya definidas en PIANO_SONGS, sin tocar ese arreglo. Pensado
        para que piano-music-loader.js (opcional, ver ese archivo) pueda
-       agregar canciones descubiertas en assets/music/music.json sin
+       agregar canciones descubiertas en assets/piano-songs/music.json sin
        tener que editar este archivo. song = { id, name, file, chart?,
        cover?, sfx? }. No hace nada si el id ya existe (evita duplicados).
 
@@ -222,6 +222,30 @@
   var state = {
     built: false,
     screen: "start", // 'start' | 'playing' | 'end'
+    // 🔒 BUG FIX (punto 27 del pedido: "audio duplicado", "dos canciones
+    // reproduciéndose simultáneamente"): true desde que se pulsa
+    // COMENZAR/JUGAR OTRA VEZ hasta que la partida realmente arrancó
+    // (primer requestAnimationFrame de tick()). Un doble tap/clic rápido
+    // sobre esos botones, antes de esta corrección, podía disparar
+    // startGame() dos veces mientras la primera llamada seguía esperando
+    // a que el audio confirmara su reproducción: la segunda llamada volvía
+    // a enganchar audio.play() + sus listeners "playing"/"error" y, al
+    // resolver ambas, terminaba con DOS bucles tick() (rAF) corriendo a la
+    // vez → notas dobles, score doble, dos canciones superpuestas. Con
+    // este guardado, cualquier llamada a startGame() mientras ya hay una
+    // en curso simplemente no hace nada.
+    isStarting: false,
+    // 🔎 Logs de diagnóstico (punto 31 del pedido). Los eventos de baja
+    // frecuencia (canción elegida, fuente de audio, audio cargado/
+    // reproduciéndose, chart cargado) SIEMPRE se registran, sea cual sea
+    // este valor — son baratos y justo lo que se pide poder verificar. Los
+    // de ALTA frecuencia (cada TAP/HOLD, el currentTime en cada frame) solo
+    // se registran cuando debug=true, y el de currentTime además se limita
+    // a 1 vez por segundo, para que dejarlo encendido no cueste rendimiento
+    // ni inunde la consola ("modo debug controlado", punto 31). Cambiar en
+    // caliente con AmarisPiano.setDebug(true/false).
+    debug: true,
+    lastDebugLogAt: 0,
     audioCtx: null,
     rafId: null,
     gameStartTime: 0, // performance.now() al iniciar partida
@@ -263,6 +287,24 @@
 
   var els = {}; // referencias DOM, pobladas en buildDOM()
   var noteIdSeq = 0;
+
+  /* ------------------------------------------------------------------ */
+  /* 1.1) LOGS DE DIAGNÓSTICO (punto 31 del pedido)                       */
+  /* logAlways(): eventos de baja frecuencia (canción elegida, fuente de  */
+  /* audio, audio cargado/reproduciéndose, chart cargado) — siempre       */
+  /* visibles, sirven para verificar rápido en consola qué está pasando.  */
+  /* logDebug(): eventos de alta frecuencia (cada TAP/HOLD) — solo si     */
+  /* state.debug === true, para no ensuciar la consola en uso normal.     */
+  /* ------------------------------------------------------------------ */
+  function logAlways() {
+    var args = Array.prototype.slice.call(arguments);
+    console.log.apply(console, args);
+  }
+  function logDebug() {
+    if (!state.debug) return;
+    var args = Array.prototype.slice.call(arguments);
+    console.log.apply(console, args);
+  }
 
   /* ------------------------------------------------------------------ */
   /* 3) AUDIO — Web Audio API, sin librerías externas                    */
@@ -460,7 +502,7 @@
       callback();
     }
     function onPlaying() {
-      console.log("[AMARIS PIANO] Audio reproduciéndose correctamente.");
+      logAlways("[AMARIS PIANO] Audio playing");
       finish();
     }
     function onError() {
@@ -472,13 +514,13 @@
     // solo dejan rastro en consola de en qué punto se atoró la carga si
     // algo falla). Se quitan junto con los demás en finish()/removeDebugListeners().
     function onCanPlay() {
-      console.log("[AMARIS PIANO] canplay — el navegador ya puede reproducir el audio.");
+      logDebug("[AMARIS PIANO] canplay — el navegador ya puede reproducir el audio.");
     }
     function onLoadedData() {
-      console.log("[AMARIS PIANO] loadeddata — primer frame de audio cargado.");
+      logAlways("[AMARIS PIANO] Audio loaded");
     }
     function onPause() {
-      console.log("[AMARIS PIANO] pause — el audio se pausó.");
+      logDebug("[AMARIS PIANO] pause — el audio se pausó.");
     }
 
     audio.addEventListener("playing", onPlaying);
@@ -487,10 +529,14 @@
     audio.addEventListener("loadeddata", onLoadedData);
     audio.addEventListener("pause", onPause);
 
-    console.log("[AMARIS PIANO] Canción:\n" + (song.name || song.id));
-    console.log("[AMARIS PIANO] Audio:\n" + song.file);
+    logAlways("[AMARIS PIANO] Song selected: " + (song.name || song.id));
 
+    // Si preloadSongAudio() (punto 18) ya dejó este MISMO archivo cargado
+    // en el <audio>, no se vuelve a asignar "src" (evita re-descargarlo
+    // desde cero): solo se rebobina a 0. Si es una canción distinta (o aún
+    // no se precargó por algún motivo), se asigna aquí igual que antes.
     if (audio.dataset.apLoadedSrc !== song.file) {
+      logAlways("[AMARIS PIANO] Audio source: " + song.file);
       audio.src = song.file;
       audio.dataset.apLoadedSrc = song.file;
     } else {
@@ -501,9 +547,13 @@
       }
     }
 
+    // audio.currentTime = 0; audio.volume = CONFIG.musicVolume; await audio.play();
+    // (punto 7 del pedido) — en ese orden exacto, y SOLO después de esto
+    // arranca la sincronización de notas (ver startGame(): el rAF de
+    // tick() no se lanza hasta que este callback llama a finish()).
     audio.volume = CONFIG.musicVolume;
 
-    console.log("[AMARIS PIANO] Intentando reproducir audio...");
+    logDebug("[AMARIS PIANO] Intentando reproducir audio...");
     var playPromise = audio.play();
     if (playPromise && typeof playPromise.catch === "function") {
       playPromise.catch(function (err) {
@@ -594,8 +644,43 @@
   // de llamar varias veces (el navegador cachea by URL) y jamás truena si
   // falta un archivo (Image()/Audio() fallan en silencio, igual que
   // preloadHitImages() ya hacía para los amigos).
+  // 🎵 Precarga el MP3 en cuanto se selecciona la canción (punto 18 del
+  // pedido), SIN reproducirlo: solo prepara el <audio> y le pide al
+  // navegador que empiece a descargar/bufferear el archivo (load()), igual
+  // que ya se hace con la portada/imágenes/sfx más abajo. startActiveSongAndThen()
+  // (llamado al pulsar COMENZAR) ya comprueba `audio.dataset.apLoadedSrc`
+  // antes de reasignar "src", así que si esta precarga ya puso el mismo
+  // archivo, COMENZAR NO vuelve a descargarlo desde cero: solo hace
+  // audio.currentTime = 0 y audio.play() — arranque más rápido y sin doble
+  // descarga.
+  function preloadSongAudio(song) {
+    if (!song || !song.file) return;
+    var audio = ensureSongAudioEl();
+    if (audio.dataset.apLoadedSrc === song.file) return; // ya precargada
+    audio.src = song.file;
+    audio.dataset.apLoadedSrc = song.file;
+    try {
+      audio.load();
+    } catch (e) {
+      /* algunos navegadores lanzan si se llama load() en un estado raro; se ignora */
+    }
+    logAlways("[AMARIS PIANO] Audio source: " + song.file);
+
+    var loggedOnce = false;
+    function onLoadedOnce() {
+      if (loggedOnce) return;
+      loggedOnce = true;
+      logAlways("[AMARIS PIANO] Audio loaded");
+      audio.removeEventListener("canplaythrough", onLoadedOnce);
+      audio.removeEventListener("loadeddata", onLoadedOnce);
+    }
+    audio.addEventListener("canplaythrough", onLoadedOnce, { once: true });
+    audio.addEventListener("loadeddata", onLoadedOnce, { once: true });
+  }
+
   function preloadSongAssets(song) {
     if (!song) return;
+    preloadSongAudio(song); // 🎵 MP3 (punto 18) — nunca reproduce, solo precarga
     if (song.cover) {
       var coverImg = new Image();
       coverImg.src = song.cover;
@@ -792,8 +877,11 @@
   // ANTES de que el jugador pulse COMENZAR.
   function logSongSelected(song) {
     if (!song) return;
-    console.log("[AMARIS PIANO] Canción:\n" + (song.name || song.id));
-    console.log("[AMARIS PIANO] Audio:\n" + song.file);
+    logAlways("[AMARIS PIANO] Song selected: " + (song.name || song.id));
+    // "Audio source" se loguea desde preloadSongAudio() (llamado siempre
+    // junto a esta función vía preloadSongAssets()), y SOLO la primera vez
+    // que se asigna ese archivo — así no se duplica el mensaje cada vez
+    // que se re-selecciona la misma canción.
   }
 
   function renderSongList() {
@@ -1307,11 +1395,20 @@
   function handleNoteHit(note, pointerId) {
     if (note.judged) return;
 
+    // 🔊 Red de seguridad barata (punto 27: "audio que se detiene"): si el
+    // AudioContext compartido (usado por playPianoNote() y, cuando no hay
+    // chart, por el analizador de energía) llegara a suspenderse solo por
+    // políticas del navegador móvil, cualquier toque lo reanuda al vuelo.
+    // resumeAudio() ya comprueba internamente si hace falta, así que
+    // llamarlo aquí en cada toque no tiene costo perceptible.
+    resumeAudio();
+
     var elapsed = getElapsedMs();
     var diff = elapsed - note.hitTime;
 
     if (note.type === "hold") {
       if (note.holdActive) return; // ya la está sosteniendo otro dedo/tecla
+      logDebug("[AMARIS PIANO] Input: HOLD (lane " + note.lane + ")");
       note.holdActive = true;
       note.holdPointerId = pointerId;
       state.activeHolds.set(pointerId, note);
@@ -1332,6 +1429,7 @@
       return;
     }
 
+    logDebug("[AMARIS PIANO] Input: TAP (lane " + note.lane + ")");
     var kind = Math.abs(diff) <= CONFIG.hitWindow.perfect ? "perfect" : "great";
     judgeNote(note, kind);
   }
@@ -1412,6 +1510,15 @@
   function tick() {
     var elapsed = getElapsedMs();
 
+    // Log de sincronización (punto 31), limitado a 1 vez por segundo: tick()
+    // corre a 60fps vía requestAnimationFrame, así que loguear esto en cada
+    // frame inundaría la consola y costaría rendimiento en móvil — por eso
+    // se limita aquí, y además solo se emite con debug=true.
+    if (state.debug && elapsed - state.lastDebugLogAt >= 1000) {
+      state.lastDebugLogAt = elapsed;
+      logDebug("[AMARIS PIANO] Audio currentTime: " + (elapsed / 1000).toFixed(2) + "s");
+    }
+
     spawnFromChart(elapsed);
     spawnFromAutoGenerator(elapsed);
 
@@ -1490,6 +1597,13 @@
   }
 
   function startGame() {
+    // 🔒 BUG FIX (punto 27: doble tap en COMENZAR/JUGAR OTRA VEZ). Si ya
+    // hay una partida en curso, o ya se pulsó COMENZAR y todavía se está
+    // esperando la confirmación del audio, ignorar esta llamada extra —
+    // evita dos bucles tick() (rAF) y dos <audio>.play() superpuestos.
+    if (state.isStarting || state.screen === "playing") return;
+    state.isStarting = true;
+
     buildDOM();
 
     // 1) Mostrar la pantalla de juego PRIMERO. Medir el layout (paso 3)
@@ -1518,6 +1632,7 @@
         state.gameStartTime = performance.now();
         state.lastSpawnTime = 0;
         state.nextSpawnIn = CONFIG.spawnInterval.min;
+        state.lastDebugLogAt = 0;
         state.chartIndex = 0;
         state.pressedKeys = {};
         state.activeHolds.clear();
@@ -1536,22 +1651,44 @@
             })
           : null;
 
+        if (state.chart) {
+          logAlways("[AMARIS PIANO] Chart loaded: " + state.chart.length + " notas (" +
+            (state.externalChart ? "chart externo" : "chart de " + (song ? song.name || song.id : "canción")) + ")");
+        } else {
+          logAlways("[AMARIS PIANO] Chart loaded: ninguno — generación automática de notas");
+        }
+
         // Análisis de energía del audio (opcional, ver getAudioEnergy):
-        // solo tiene efecto cuando NO hay chart, para modular el
-        // generador automático. Si falla o no es soportado, no pasa nada.
-        try {
-          ensureSongAnalyser();
-        } catch (e) {
-          /* se ignora: el juego sigue funcionando sin análisis de energía */
+        // SOLO tiene efecto y SOLO se conecta cuando NO hay chart, para
+        // modular el generador automático. 🐛 BUG FIX (audio que se
+        // detiene / se silencia sin razón aparente): createMediaElementSource()
+        // engancha el <audio> de la canción al grafo de Web Audio API de
+        // forma IRREVERSIBLE — a partir de ahí, si ese AudioContext se
+        // suspende (algo que Safari/Chrome móvil pueden hacer solos, p. ej.
+        // al bloquear pantalla), el audio se queda mudo aunque siga
+        // "reproduciéndose" (audio.paused sigue en false y currentTime
+        // sigue avanzando). Antes se conectaba SIEMPRE, incluso cuando la
+        // canción ya traía su propio chart y el análisis de energía no se
+        // iba a usar para nada — un riesgo innecesario justo para el caso
+        // real de este proyecto (canción con chart.json). Si falla o no es
+        // soportado, no pasa nada: el generador automático sigue igual.
+        if (!state.chart) {
+          try {
+            ensureSongAnalyser();
+          } catch (e) {
+            /* se ignora: el juego sigue funcionando sin análisis de energía */
+          }
         }
 
         // 6) Iniciar requestAnimationFrame → 7) comienza el juego
+        state.isStarting = false; // la partida ya arrancó de verdad
         state.rafId = window.requestAnimationFrame(tick);
       });
     });
   }
 
   function endGame() {
+    state.isStarting = false;
     stopSongAudio();
     showScreen("end");
     els.finalScore.textContent = String(state.score);
@@ -1569,6 +1706,7 @@
   }
 
   function resetGame() {
+    state.isStarting = false;
     window.cancelAnimationFrame(state.rafId);
     stopSongAudio();
     clearNotes();
@@ -1594,6 +1732,17 @@
     // mide una vez de inmediato y otra vez un poco después, por si acaso.
     measureLaneMetrics();
     window.setTimeout(measureLaneMetrics, 250);
+  }
+
+  // 🔊 BUG FIX (punto 27: "audio que se detiene" en móvil). Algunos
+  // navegadores móviles (sobre todo Safari/iOS) suspenden el AudioContext
+  // compartido al bloquear la pantalla o cambiar de app, y no siempre lo
+  // reanudan solos al volver — aunque el propio <audio> de la canción siga
+  // "reproduciéndose" técnicamente. Escuchar "visibilitychange" mientras el
+  // piano está abierto y reanudar el contexto en cuanto la pestaña vuelve a
+  // ser visible es la red de seguridad estándar para este problema.
+  function handleVisibilityChange() {
+    if (document.visibilityState === "visible") resumeAudio();
   }
 
   function preventBackgroundScroll(event) {
@@ -1638,6 +1787,7 @@
     // rebote la página de Amaris World detrás (efecto rubber-band de
     // iOS Safari). Los carriles siguen recibiendo su propio touch-action.
     els.overlay.addEventListener("touchmove", preventBackgroundScroll, { passive: false });
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     window.setTimeout(function () {
       els.startBtn.focus();
@@ -1647,6 +1797,7 @@
   function closeGame() {
     if (!state.built) return;
 
+    state.isStarting = false;
     window.cancelAnimationFrame(state.rafId);
     stopSongAudio();
     clearNotes();
@@ -1665,6 +1816,7 @@
     window.removeEventListener("resize", measureLaneMetrics);
     window.removeEventListener("orientationchange", handleOrientationChange);
     els.overlay.removeEventListener("touchmove", preventBackgroundScroll);
+    document.removeEventListener("visibilitychange", handleVisibilityChange);
 
     showScreen("start");
 
@@ -1694,9 +1846,11 @@
     // Cambia la canción activa para la próxima partida (id de PIANO_SONGS).
     // Si el id no existe, no hace nada (se queda con la canción anterior).
     setSong: function (id) {
-      if (getSongById(id)) {
+      var song = getSongById(id);
+      if (song) {
         state.activeSongId = id;
-        preloadSongAssets(getSongById(id)); // punto 16
+        logSongSelected(song);
+        preloadSongAssets(song); // punto 16/18
       }
     },
 
@@ -1709,6 +1863,24 @@
       if (!song || !song.id || !song.file) return false;
       if (getSongById(song.id)) return false;
       PIANO_SONGS.push(song);
+
+      // 🐛 BUG FIX (selector que no selecciona la canción correcta, punto
+      // 27): PIANO_SONGS empieza VACÍO a propósito (ver comentario junto a
+      // su declaración), así que DEFAULT_SONG_ID se calculaba UNA sola vez
+      // al cargar el archivo y quedaba en null para siempre — incluso
+      // después de registrar canciones con addSong(). getActiveSong() ya
+      // caía de respaldo en PIANO_SONGS[0], así que la canción SÍ sonaba
+      // bien con una sola canción registrada, pero el selector nunca la
+      // marcaba visualmente como activa (".is-active") hasta que el
+      // jugador la tocaba a mano. Aquí se fija explícitamente la PRIMERA
+      // canción registrada como activa de verdad — y se precarga su MP3
+      // de inmediato (punto 18), sin esperar a que se abra el juego.
+      if (!state.activeSongId) {
+        state.activeSongId = song.id;
+        logSongSelected(song);
+        preloadSongAssets(song);
+      }
+
       renderSongList(); // refresca el selector si el juego ya construyó su DOM
       return true;
     },
@@ -1721,6 +1893,7 @@
       song.chart = chart.slice().sort(function (a, b) {
         return a.time - b.time;
       });
+      logAlways("[AMARIS PIANO] Chart loaded: " + song.chart.length + " notas (" + (song.name || song.id) + ")");
       return true;
     },
 
@@ -1755,6 +1928,17 @@
     },
     getOverlayElement: function () {
       return els.overlay || null;
+    },
+
+    // 🔎 Punto 31 del pedido: "modo debug controlado". Los logs de baja
+    // frecuencia (canción, fuente de audio, cargado/reproduciéndose, chart)
+    // siempre se muestran; esto solo enciende/apaga los de ALTA frecuencia
+    // (cada TAP/HOLD, el currentTime cada segundo). Por defecto están
+    // encendidos (state.debug = true) para poder verificar todo desde el
+    // primer momento; llama a AmarisPiano.setDebug(false) para silenciarlos
+    // una vez comprobado que todo funciona.
+    setDebug: function (enabled) {
+      state.debug = !!enabled;
     }
   };
 
