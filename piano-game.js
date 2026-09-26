@@ -508,7 +508,14 @@
   function measureLaneMetrics() {
     var wrapRect = els.lanesWrap.getBoundingClientRect();
     var hitRect = els.hitline.getBoundingClientRect();
-    var noteSize = 56; // debe coincidir con --ap-note-size en piano-game.css
+    // La nota ahora es una tecla rectangular (más alta que ancha), así que
+    // centramos verticalmente usando su ALTURA real (--ap-note-height),
+    // leída directamente del CSS en vez de un número fijo, para que
+    // funcione igual en cualquier breakpoint.
+    var noteSize = parseFloat(
+      getComputedStyle(els.lanesWrap).getPropertyValue("--ap-note-height")
+    );
+    if (!noteSize || isNaN(noteSize)) noteSize = 95; // resguardo si el navegador no expone la variable
     var travelPx = hitRect.top - wrapRect.top - noteSize * 0.5;
     if (travelPx < 40) travelPx = 40; // resguardo en pantallas muy pequeñas
     state.laneMetrics = { travelPx: travelPx };

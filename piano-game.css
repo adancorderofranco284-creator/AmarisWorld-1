@@ -24,7 +24,14 @@
   --ap-gold-strong: #ffe9a8;
   --ap-blue: #7fd9ff;
   --ap-note-size: 56px;
+  /* Tecla rectangular vertical tipo Piano Tiles: el ancho sigue siendo
+     --ap-note-size (para no romper el centrado horizontal por carril),
+     la altura es un múltiplo del ancho. */
+  --ap-note-height: calc(var(--ap-note-size) * 1.7);
   --ap-hitline-offset: 96px;
+  /* Paleta azul/cian/morado de las teclas (independiente del arcoíris,
+     que se sigue usando para línea de golpe, feedback y partículas). */
+  --ap-tile-glow: linear-gradient(160deg, #6fd8ff, #9d7bff 55%, #7fe0ff);
   /* Paleta arcoíris compartida por notas, línea de golpe, partículas y
      feedback. Un solo lugar para ajustar el tono del efecto. */
   --ap-rainbow: conic-gradient(
@@ -333,10 +340,10 @@
   gap: 0;
   margin-top: 0;
   touch-action: none;
-  /* Muy transparente a propósito: los carriles son "pistas" de cristal
-     sobre el fondo de Amaris World, no tarjetas opacas. */
-  background: linear-gradient(180deg, rgba(122, 76, 200, 0.05) 0%, rgba(10, 11, 22, 0.08) 55%, rgba(122, 76, 200, 0.04) 100%);
-  box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.22);
+  /* Tablero tipo Piano Tiles: degradado azul/morado/cian bien presente
+     detrás de los carriles (antes era casi transparente). */
+  background: linear-gradient(200deg, rgba(20, 20, 60, 0.55) 0%, rgba(60, 30, 110, 0.42) 45%, rgba(15, 60, 90, 0.4) 100%);
+  box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.28);
 }
 
 .amaris-piano-lane {
@@ -376,10 +383,10 @@
   left: 0;
   right: 0;
   bottom: var(--ap-hitline-offset);
-  height: 4px;
-  background: var(--ap-rainbow-flat);
+  height: 6px;
+  background: linear-gradient(90deg, #6fd8ff, #9d7bff 50%, #7fe0ff);
   background-size: 220% 100%;
-  box-shadow: 0 0 18px 3px rgba(255, 215, 106, 0.45), 0 0 55px 10px rgba(122, 76, 200, 0.22);
+  box-shadow: 0 0 22px 5px rgba(127, 217, 255, 0.6), 0 0 60px 12px rgba(157, 123, 255, 0.32);
   z-index: 2;
   pointer-events: none;
   animation: ap-hitline-pulse 1.8s ease-in-out infinite, ap-hitline-flow 6s linear infinite;
@@ -391,9 +398,9 @@
   left: 0;
   right: 0;
   top: 50%;
-  height: 52px;
+  height: 64px;
   transform: translateY(-50%);
-  background: linear-gradient(180deg, rgba(255, 215, 106, 0.14), transparent 75%);
+  background: linear-gradient(180deg, rgba(127, 217, 255, 0.2), transparent 75%);
   pointer-events: none;
 }
 
@@ -429,9 +436,15 @@
   top: -4px;
   left: 50%;
   width: var(--ap-note-size);
-  height: var(--ap-note-size);
+  height: var(--ap-note-height);
   margin-left: calc(var(--ap-note-size) / -2);
-  border-radius: 50%;
+  border-radius: 14px;
+  /* La "tecla" en sí: bloque oscuro semitransparente con sombra hacia
+     abajo, como una ficha de Piano Tiles cayendo. */
+  background: linear-gradient(165deg, rgba(8, 10, 24, 0.92), rgba(18, 10, 38, 0.88));
+  border: 1.5px solid rgba(127, 217, 255, 0.32);
+  box-shadow: 0 0 16px rgba(127, 217, 255, 0.3), 0 0 32px rgba(157, 123, 255, 0.22),
+    0 8px 16px rgba(0, 0, 0, 0.45);
   will-change: transform;
   z-index: 3;
 }
@@ -454,15 +467,15 @@
 .amaris-piano-note-trail {
   position: absolute;
   left: 50%;
-  bottom: 58%;
-  width: 3px;
-  height: calc(var(--ap-note-size) * 1.3);
+  bottom: 100%;
+  width: 4px;
+  height: calc(var(--ap-note-height) * 0.85);
   transform: translateX(-50%);
   background: linear-gradient(
     to top,
-    rgba(255, 255, 255, 0.5),
-    rgba(127, 217, 255, 0.28) 45%,
-    rgba(201, 166, 255, 0.16) 75%,
+    rgba(255, 255, 255, 0.42),
+    rgba(127, 217, 255, 0.26) 45%,
+    rgba(157, 123, 255, 0.14) 75%,
     transparent
   );
   filter: blur(1.5px);
@@ -472,43 +485,50 @@
 
 .amaris-piano-note-glow {
   position: absolute;
-  inset: -9px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(255, 215, 106, 0.45), transparent 70%);
-  filter: blur(2px);
+  inset: -10px;
+  border-radius: 20px;
+  background: radial-gradient(ellipse, rgba(127, 217, 255, 0.4), transparent 70%);
+  filter: blur(3px);
   z-index: 1;
 }
 
-/* Anillo arcoíris rotando lentamente alrededor de cada foto — el "borde
-   luminoso" que convierte la foto en una nota de juego musical. Hecho con
-   un mask para dibujar solo el aro (grosor ~3px), sin tocar el <img>. */
+/* Brillo azul/cian/morado alrededor de la tecla (antes era un anillo
+   arcoíris rotando alrededor de una foto circular). Mismo mecanismo de
+   mask para dibujar solo el borde, ahora rectangular y con pulso suave
+   en vez de rotación — no queda bien un anillo girando sobre un bloque
+   recto. */
 .amaris-piano-note-ring {
   position: absolute;
-  inset: -5px;
-  border-radius: 50%;
-  padding: 3px;
-  background: var(--ap-rainbow);
+  inset: -3px;
+  border-radius: 17px;
+  padding: 2px;
+  background: var(--ap-tile-glow);
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
-  filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.3));
-  animation: ap-ring-spin 2.6s linear infinite;
+  filter: drop-shadow(0 0 7px rgba(127, 217, 255, 0.5));
+  animation: ap-ring-pulse 1.7s ease-in-out infinite;
   z-index: 2;
 }
 
-@keyframes ap-ring-spin {
-  to { transform: rotate(360deg); }
+@keyframes ap-ring-pulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
 }
 
+/* La foto queda enmarcada DENTRO de la tecla (no flotando como círculo):
+   un pequeño margen deja ver el bloque oscuro alrededor, como en la
+   referencia. */
 .amaris-piano-note-img {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  border-radius: 50%;
+  position: absolute;
+  inset: 6px;
+  width: calc(100% - 12px);
+  height: calc(100% - 12px);
+  border-radius: 10px;
   object-fit: cover;
   display: block;
-  border: 2px solid rgba(255, 255, 255, 0.85);
-  box-shadow: 0 0 14px rgba(255, 215, 106, 0.55), 0 4px 12px rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(200, 230, 255, 0.35);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.5), inset 0 0 12px rgba(0, 0, 0, 0.25);
   background: var(--ap-purple);
   z-index: 3;
 }
@@ -518,10 +538,11 @@
 }
 
 .amaris-piano-note-initial {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  border-radius: 50%;
+  position: absolute;
+  inset: 6px;
+  width: calc(100% - 12px);
+  height: calc(100% - 12px);
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -529,18 +550,23 @@
   font-size: 16px;
   color: #241536;
   background: var(--ap-fallback-color, var(--ap-pink));
-  border: 2px solid rgba(255, 255, 255, 0.85);
-  box-shadow: 0 0 14px rgba(255, 215, 106, 0.55), 0 4px 12px rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(200, 230, 255, 0.35);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.5);
   z-index: 3;
 }
 
 .amaris-piano-note.is-near .amaris-piano-note-img,
 .amaris-piano-note.is-near .amaris-piano-note-initial {
-  box-shadow: 0 0 20px rgba(255, 215, 106, 0.95), 0 4px 12px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 0 20px rgba(127, 217, 255, 0.85), 0 4px 12px rgba(0, 0, 0, 0.45);
+}
+
+.amaris-piano-note.is-near {
+  box-shadow: 0 0 22px rgba(127, 217, 255, 0.5), 0 0 40px rgba(157, 123, 255, 0.3),
+    0 8px 16px rgba(0, 0, 0, 0.45);
 }
 
 .amaris-piano-note.is-near .amaris-piano-note-ring {
-  animation-duration: 0.9s;
+  animation-duration: 0.7s;
 }
 
 .amaris-piano-note.is-judged {
@@ -551,7 +577,7 @@
 
 .amaris-piano-note.is-perfect .amaris-piano-note-img,
 .amaris-piano-note.is-perfect .amaris-piano-note-initial {
-  box-shadow: 0 0 28px rgba(255, 215, 106, 1), 0 4px 12px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 0 28px rgba(255, 215, 106, 0.95), 0 4px 12px rgba(0, 0, 0, 0.45);
 }
 
 .amaris-piano-note.is-miss {
@@ -581,7 +607,7 @@
 }
 
 .amaris-piano-note.is-hit .amaris-piano-note-ring {
-  animation: ap-ring-spin 0.5s linear infinite, ap-hit-ring-flash 0.26s ease-out;
+  animation: ap-ring-pulse 0.4s ease-in-out infinite, ap-hit-ring-flash 0.26s ease-out;
 }
 
 @keyframes ap-hit-pop {
