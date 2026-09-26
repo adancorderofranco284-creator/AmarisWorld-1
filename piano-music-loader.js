@@ -84,17 +84,73 @@
     return base.replace(/\/+$/, "") + "/" + rel;
   }
 
+  // 🖼️ Carpeta de imágenes de la canción: SIEMPRE
+  // assets/piano-songs/<carpeta-de-la-cancion>/images/ — nunca hay que
+  // escribirla a mano en el chart. El nombre del archivo dentro de
+  // "image"/"hitImage" puede ser CUALQUIERA (Amaris_normal.png,
+  // foto_favorita.jpg, imagen_arcoiris.webp...), no se modifica ni se
+  // le fuerza una extensión: se usa tal cual, tal como está escrito.
+  function imagesFolder(folder) {
+    return folder.replace(/\/+$/, "") + "/images";
+  }
+
   function resolveChartPaths(chart, folder) {
     if (!Array.isArray(chart)) return chart;
+    var imgFolder = imagesFolder(folder);
     return chart.map(function (entry) {
       var copy = {};
       for (var key in entry) {
         if (Object.prototype.hasOwnProperty.call(entry, key)) copy[key] = entry[key];
       }
-      if (copy.image) copy.image = joinPath(folder, copy.image);
-      if (copy.hitImage) copy.hitImage = joinPath(folder, copy.hitImage);
+      // Si el valor ya es una ruta completa (contiene "/") o una URL, se
+      // respeta tal cual (permite compartir una imagen entre canciones o
+      // usar una fuera de images/); si es solo un nombre de archivo, se
+      // busca dentro de la carpeta images/ de ESTA canción.
+      if (copy.image) copy.image = joinPath(imgFolder, copy.image);
+      if (copy.hitImage) copy.hitImage = joinPath(imgFolder, copy.hitImage);
       return copy;
     });
+  }
+
+  // 📋 Manifiesto OPCIONAL images.json dentro de la carpeta de la canción.
+  // No es necesario para que "image"/"hitImage" en chart.json funcionen
+  // (esos ya buscan directo en images/ con el nombre que se les dé); este
+  // manifiesto sirve solo para PRECARGAR de antemano todas las imágenes
+  // que declares ahí (cualquier cantidad, con el nombre de propiedad que
+  // quieras), así llegan a la pantalla ya en caché la primera vez que se
+  // usan. Si el archivo no existe, no pasa nada: no es obligatorio.
+  //
+  // Acepta dos formas:
+  //   { "normal": "Amaris_normal.png", "pressed": "Amaris_presionada.png" }
+  //   { "images": { "normal": "...", "rainbow": "imagen_arcoiris.webp" } }
+  function preloadImagesManifest(folder) {
+    var imgFolder = imagesFolder(folder);
+    var manifestUrl = joinPath(folder, "images.json");
+    fetch(manifestUrl)
+      .then(function (res) {
+        if (!res.ok) throw new Error("sin images.json");
+        return res.json();
+      })
+      .then(function (manifest) {
+        var map = manifest && typeof manifest.images === "object" ? manifest.images : manifest;
+        if (!map || typeof map !== "object") return;
+        var count = 0;
+        Object.keys(map).forEach(function (key) {
+          var filename = map[key];
+          if (typeof filename !== "string" || !filename) return;
+          var img = new Image();
+          img.src = joinPath(imgFolder, filename);
+          count++;
+        });
+        if (count > 0) {
+          console.log(LOG_PREFIX + " images.json: " + count + " imagen(es) precargadas de " + folder + "/images/");
+        }
+      })
+      .catch(function () {
+        // Sin images.json (opcional) o falló la carga: no es un error,
+        // las imágenes referenciadas directamente en chart.json siguen
+        // funcionando igual, solo no llegan pre-cacheadas de antemano.
+      });
   }
 
   // Si la canción no especifica "sfx" en el manifiesto, se asumen por
@@ -157,6 +213,7 @@
     console.log(LOG_PREFIX + " Registrando:\n" + entry.name);
     console.log(LOG_PREFIX + " Archivo:\n" + filePath);
     checkFileExists(filePath);
+    preloadImagesManifest(folder); // opcional (punto: images.json), nunca bloquea el registro
 
     var song = {
       id: entry.id,

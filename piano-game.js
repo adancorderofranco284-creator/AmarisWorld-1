@@ -1107,6 +1107,11 @@
     img.draggable = false;
     img.src = imgSrc;
     img.addEventListener("error", function () {
+      // 🔎 Diagnóstico: la imagen indicada (por nombre de archivo, el que
+      // sea) no se pudo cargar. Se avisa en consola y se sigue con el
+      // avatar de respaldo — la nota NUNCA se rompe por esto.
+      console.warn("[AMARIS PIANO] Imagen no encontrada: " + imgSrc);
+
       // Si el error ocurre DESPUÉS de acertar (falló la hitImage, no la
       // imagen normal), no destruimos la nota con el avatar de iniciales:
       // simplemente nos quedamos mostrando la imagen normal, que ya se
