@@ -433,26 +433,62 @@
     var settled = false;
     var fallbackTimer = null;
 
+    function describeAudioError() {
+      var mediaError = audio.error; // MediaError o null
+      return {
+        code: mediaError ? mediaError.code : null,
+        message: mediaError ? mediaError.message : null,
+        src: audio.currentSrc || audio.src,
+        networkState: audio.networkState,
+        readyState: audio.readyState
+      };
+    }
+
+    function removeDebugListeners() {
+      audio.removeEventListener("playing", onPlaying);
+      audio.removeEventListener("error", onError);
+      audio.removeEventListener("canplay", onCanPlay);
+      audio.removeEventListener("loadeddata", onLoadedData);
+      audio.removeEventListener("pause", onPause);
+    }
+
     function finish() {
       if (settled) return;
       settled = true;
-      audio.removeEventListener("playing", onPlaying);
-      audio.removeEventListener("error", onError);
+      removeDebugListeners();
       window.clearTimeout(fallbackTimer);
       callback();
     }
     function onPlaying() {
-      console.log("[AMARIS PIANO] Reproduciendo:\n" + (song.name || song.id));
+      console.log("[AMARIS PIANO] Audio reproduciéndose correctamente.");
       finish();
     }
     function onError() {
       state.songAudioFailed = true;
-      console.warn("[AMARIS PIANO] ERROR DE AUDIO:\n" + song.file);
+      console.warn("[AMARIS PIANO] ERROR al reproducir:", describeAudioError());
       finish();
+    }
+    // Listeners puramente de DIAGNÓSTICO (no deciden nada por sí mismos,
+    // solo dejan rastro en consola de en qué punto se atoró la carga si
+    // algo falla). Se quitan junto con los demás en finish()/removeDebugListeners().
+    function onCanPlay() {
+      console.log("[AMARIS PIANO] canplay — el navegador ya puede reproducir el audio.");
+    }
+    function onLoadedData() {
+      console.log("[AMARIS PIANO] loadeddata — primer frame de audio cargado.");
+    }
+    function onPause() {
+      console.log("[AMARIS PIANO] pause — el audio se pausó.");
     }
 
     audio.addEventListener("playing", onPlaying);
     audio.addEventListener("error", onError);
+    audio.addEventListener("canplay", onCanPlay);
+    audio.addEventListener("loadeddata", onLoadedData);
+    audio.addEventListener("pause", onPause);
+
+    console.log("[AMARIS PIANO] Canción:\n" + (song.name || song.id));
+    console.log("[AMARIS PIANO] Audio:\n" + song.file);
 
     if (audio.dataset.apLoadedSrc !== song.file) {
       audio.src = song.file;
@@ -465,12 +501,18 @@
       }
     }
 
+    audio.volume = CONFIG.musicVolume;
+
+    console.log("[AMARIS PIANO] Intentando reproducir audio...");
     var playPromise = audio.play();
     if (playPromise && typeof playPromise.catch === "function") {
-      playPromise.catch(function () {
-        // Bloqueo de autoplay, archivo ausente, etc.: seguimos sin música.
+      playPromise.catch(function (err) {
+        // Bloqueo de autoplay, archivo ausente, etc.: seguimos sin música,
+        // pero el error se muestra completo en consola (nunca se silencia).
         state.songAudioFailed = true;
-        console.warn("[AMARIS PIANO] ERROR DE AUDIO:\n" + song.file);
+        var info = describeAudioError();
+        info.playRejection = err && (err.message || String(err));
+        console.warn("[AMARIS PIANO] ERROR al reproducir:", info);
         finish();
       });
     }
@@ -733,6 +775,7 @@
     preloadHitImages();
     preloadGlobalSfx();
     preloadSongAssets(getActiveSong());
+    logSongSelected(getActiveSong());
     renderSongList();
     state.built = true;
   }
@@ -743,6 +786,16 @@
   // todavía, se mantiene oculto). Elegir una llama internamente a la
   // misma AmarisPiano.setSong() ya existente, así que setSong() sigue
   // funcionando igual para quien la use desde fuera.
+  // Log de diagnóstico (pedido explícito): cada vez que una canción queda
+  // seleccionada como activa —al construir el juego por primera vez o al
+  // tocarla en el selector— se informa cuál es y qué ruta de audio usará,
+  // ANTES de que el jugador pulse COMENZAR.
+  function logSongSelected(song) {
+    if (!song) return;
+    console.log("[AMARIS PIANO] Canción:\n" + (song.name || song.id));
+    console.log("[AMARIS PIANO] Audio:\n" + song.file);
+  }
+
   function renderSongList() {
     if (!els.songList) return;
     if (PIANO_SONGS.length < 1) {
@@ -761,6 +814,7 @@
       btn.addEventListener("click", function () {
         state.activeSongId = song.id;
         preloadSongAssets(song); // punto 16: precargar justo al elegirla
+        logSongSelected(song);
         renderSongList();
       });
       els.songList.appendChild(btn);

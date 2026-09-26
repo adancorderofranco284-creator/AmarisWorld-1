@@ -142,13 +142,16 @@
 
   function registerSong(entry) {
     if (!window.AmarisPiano || typeof window.AmarisPiano.addSong !== "function") return;
-    if (!entry || !entry.id || !entry.name || !entry.folder || !entry.file) {
-      console.warn(LOG_PREFIX + " Entrada inválida en music.json (faltan id/name/folder/file), se omite:", entry);
+    if (!entry || !entry.id || !entry.name || !entry.folder) {
+      console.warn(LOG_PREFIX + " Entrada inválida en music.json (faltan id/name/folder), se omite:", entry);
       return;
     }
 
     var folder = entry.folder.replace(/\/+$/, "");
-    var filePath = joinPath(folder, entry.file);
+    // Compatibilidad: si el manifiesto no trae "file" (formato antiguo),
+    // se asume "song.mp3" dentro de la carpeta. Si SÍ trae "file", se usa
+    // ese nombre EXACTO — nunca se fuerza "song.mp3" por encima de él.
+    var filePath = joinPath(folder, entry.file || "song.mp3");
     var coverPath = joinPath(folder, entry.cover || "cover.jpg");
 
     console.log(LOG_PREFIX + " Registrando:\n" + entry.name);
