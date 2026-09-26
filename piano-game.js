@@ -88,22 +88,28 @@
      botón no existe todavía o cambia de id, esto simplemente no hace
      nada — no rompe el resto del módulo ni de la página.
 
-   SISTEMA DE MÚSICA (assets/piano-music/):
-     PIANO_SONGS define las canciones disponibles. Al comenzar una
-     partida se selecciona la canción activa (por defecto la primera de
-     la lista, o la fijada con setSong()), se carga y se reproduce con
-     un <audio> propio e independiente del reproductor principal de
-     Amaris World (#bgAudio). Si esa canción define su propio arreglo
-     "chart", se usa automáticamente para sincronizar las notas; si no,
-     se mantiene intacto el generador automático de notas ya existente.
-     Si el archivo .mp3 todavía no existe (aún no lo copiaste a
-     assets/piano-music/), el juego sigue funcionando igual, sin música
-     y con generación automática — nunca se rompe ni se queda colgado.
+   SISTEMA DE MÚSICA (assets/piano-songs/):
+     PIANO_SONGS define las canciones disponibles. Se deja VACÍO a
+     propósito: las canciones reales de Amaris Piano viven en
+     assets/piano-songs/ (su propia carpeta, separada del reproductor
+     principal de Amaris World) y se registran en caliente por
+     piano-music-loader.js, que lee assets/piano-songs/music.json y
+     llama a AmarisPiano.addSong() por cada una — sin tocar este
+     arreglo ni este archivo. Al comenzar una partida se selecciona la
+     canción activa (por defecto la primera registrada, o la fijada con
+     setSong()), se carga y se reproduce con un <audio> propio e
+     independiente del reproductor principal de Amaris World (#bgAudio).
+     Si esa canción define su propio arreglo "chart", se usa
+     automáticamente para sincronizar las notas; si no, se mantiene
+     intacto el generador automático de notas ya existente. Si el
+     archivo .mp3 no existe o falla, el juego sigue funcionando igual,
+     sin música y con generación automática — nunca se rompe ni se
+     queda colgado.
 
-     Para agregar una canción nueva, solo edita el arreglo PIANO_SONGS
-     de más abajo, por ejemplo:
+     También se puede seguir agregando una canción manualmente aquí, en
+     PIANO_SONGS, con el mismo formato que usa addSong(), por ejemplo:
        { id: "cancion-amaris", name: "Canción de Amaris",
-         file: "assets/piano-music/cancion-amaris.mp3" }
+         file: "assets/piano-songs/cancion-amaris/song.mp3" }
 
    ========================================================================== */
 
@@ -129,9 +135,18 @@
     { id: "amigo4", name: "Amigo 4", image: "assets/friends/amigo4.webp" }
   ];
 
-  // 🎵 Canciones del piano. Los archivos .mp3 van en assets/piano-music/
-  // (tú los colocas manualmente ahí; el juego solo necesita la ruta).
-  // Agregar una canción nueva = agregar un objeto más a este arreglo.
+  // 🎵 Canciones del piano. VACÍO A PROPÓSITO: las canciones reales se
+  // registran solas al cargar la página, leídas desde
+  // assets/piano-songs/music.json por piano-music-loader.js (que llama a
+  // AmarisPiano.addSong() por cada una — ver ese archivo). Este arreglo
+  // ya no depende de archivos fijos como "piano-theme.mp3" o "song1.mp3":
+  // si no existen, ya no se intentan reproducir.
+  //
+  // También puedes seguir agregando canciones a mano aquí mismo, con el
+  // mismo formato que usa addSong() — útil solo si prefieres no usar
+  // music.json:
+  //   { id: "cancion-amaris", name: "Canción de Amaris",
+  //     file: "assets/piano-songs/cancion-amaris/song.mp3" }
   //
   // "chart" es OPCIONAL por canción: si lo defines, esa canción usa esas
   // notas sincronizadas en vez de la generación automática. Formato
@@ -139,24 +154,7 @@
   // en ms desde el inicio de la canción. "type" es opcional ("tap" por
   // defecto); "duration" (ms) solo aplica a type:"hold". Sin chart, el
   // juego sigue generando notas automáticamente como antes.
-  var PIANO_SONGS = [
-    { id: "piano-theme", name: "Piano Theme", file: "assets/piano-music/piano-theme.mp3" },
-    { id: "song1", name: "Song 1", file: "assets/piano-music/song1.mp3" }
-    // Ejemplo para agregar más:
-    // { id: "cancion-amaris", name: "Canción de Amaris", file: "assets/piano-music/cancion-amaris.mp3" }
-    // Ejemplo con chart sincronizado propio (tap y hold mezclados):
-    // {
-    //   id: "song2",
-    //   name: "Song 2",
-    //   file: "assets/piano-music/song2.mp3",
-    //   chart: [
-    //     { time: 1000, lane: 0, friend: 0, type: "tap" },
-    //     { time: 1500, lane: 1, friend: 1, type: "tap" },
-    //     { time: 2000, lane: 2, friend: 0, type: "hold", duration: 1200 },
-    //     { time: 3400, lane: 3, friend: 2, type: "tap" }
-    //   ]
-    // }
-  ];
+  var PIANO_SONGS = [];
 
   // Canción usada por defecto al abrir una partida si nadie llamó a
   // AmarisPiano.setSong(). Cambia este id para cambiar la canción por
@@ -167,15 +165,17 @@
   // prioridad, entre el sonido propio de la canción y el sintetizado de
   // respaldo). Completamente opcional: si estos archivos no existen, el
   // juego jamás truena — simplemente sigue usando el sonido sintetizado
-  // de siempre. Coloca los .mp3 en assets/piano-music/sfx/ si quieres
-  // usarlos; si no, deja esto vacío y no pasa nada.
+  // de siempre. Coloca los .mp3 en assets/piano-songs/sfx/ si quieres
+  // usarlos como sonido de respaldo para TODAS las canciones; si no,
+  // deja esto vacío y no pasa nada (cada canción puede además traer su
+  // propio sfx.<kind>, que tiene prioridad sobre este).
   var GLOBAL_SFX = {
-    // perfect: "assets/piano-music/sfx/perfect.mp3",
-    // excellent: "assets/piano-music/sfx/excellent.mp3",
-    // great: "assets/piano-music/sfx/great.mp3",
-    // good: "assets/piano-music/sfx/good.mp3",
-    // miss: "assets/piano-music/sfx/miss.mp3",
-    // hold: "assets/piano-music/sfx/hold.mp3"
+    // perfect: "assets/piano-songs/sfx/perfect.mp3",
+    // excellent: "assets/piano-songs/sfx/excellent.mp3",
+    // great: "assets/piano-songs/sfx/great.mp3",
+    // good: "assets/piano-songs/sfx/good.mp3",
+    // miss: "assets/piano-songs/sfx/miss.mp3",
+    // hold: "assets/piano-songs/sfx/hold.mp3"
   };
 
   function getSongById(id) {
@@ -442,10 +442,12 @@
       callback();
     }
     function onPlaying() {
+      console.log("[AMARIS PIANO] Reproduciendo:\n" + (song.name || song.id));
       finish();
     }
     function onError() {
       state.songAudioFailed = true;
+      console.warn("[AMARIS PIANO] ERROR DE AUDIO:\n" + song.file);
       finish();
     }
 
@@ -468,6 +470,7 @@
       playPromise.catch(function () {
         // Bloqueo de autoplay, archivo ausente, etc.: seguimos sin música.
         state.songAudioFailed = true;
+        console.warn("[AMARIS PIANO] ERROR DE AUDIO:\n" + song.file);
         finish();
       });
     }
@@ -734,14 +737,15 @@
     state.built = true;
   }
 
-  // 🎵 Selector de canciones en la pantalla de inicio. Solo se muestra si
-  // hay más de una canción en PIANO_SONGS (con una sola, no aporta nada y
-  // se mantiene oculto). Elegir una llama internamente a la misma
-  // AmarisPiano.setSong() ya existente, así que setSong() sigue
+  // 🎵 Selector de canciones en la pantalla de inicio. Se muestra en
+  // cuanto haya al menos una canción registrada (una sola canción se
+  // muestra igual, ya marcada como activa; con ninguna registrada
+  // todavía, se mantiene oculto). Elegir una llama internamente a la
+  // misma AmarisPiano.setSong() ya existente, así que setSong() sigue
   // funcionando igual para quien la use desde fuera.
   function renderSongList() {
     if (!els.songList) return;
-    if (PIANO_SONGS.length < 2) {
+    if (PIANO_SONGS.length < 1) {
       els.songList.hidden = true;
       return;
     }

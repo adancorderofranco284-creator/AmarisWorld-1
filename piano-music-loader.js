@@ -1,77 +1,82 @@
 /* ==========================================================================
    AMARIS WORLD — piano-music-loader.js
-   Sistema de MÚSICA PERSONALIZADA para Amaris Piano (puntos 10-16 del
-   pedido de mejora). 100% OPCIONAL y aditivo: no modifica PIANO_SONGS ni
-   ninguna función interna de piano-game.js. Se limita a LEER un
-   manifiesto opcional en assets/music/music.json y, por cada canción que
-   encuentre, registrarla con window.AmarisPiano.addSong() / setSongChart()
-   — dos métodos públicos añadidos a piano-game.js pensados exactamente
-   para esto.
+   Sistema de MÚSICA PERSONALIZADA para Amaris Piano. 100% OPCIONAL y
+   aditivo: no modifica PIANO_SONGS a mano ni ninguna función interna de
+   piano-game.js. Se limita a LEER el manifiesto de Amaris Piano en
+   assets/piano-songs/music.json y, por cada canción que encuentre,
+   registrarla con window.AmarisPiano.addSong() / setSongChart() — dos
+   métodos públicos que piano-game.js ya expone exactamente para esto.
 
-   Si assets/music/music.json no existe, está vacío, o falla la carga (por
-   ejemplo al abrir el proyecto con file:// sin servidor, donde fetch()
-   puede fallar por CORS), este archivo simplemente no hace nada: el juego
-   sigue funcionando igual, con las canciones ya definidas dentro de
-   PIANO_SONGS (piano-game.js). Nunca produce un error visible ni bloquea
-   nada — exactamente como pide el punto 13 ("nunca producir error si
-   falta un archivo").
+   IMPORTANTE — separación de sistemas (no tocar el reproductor principal):
+     - assets/music/            → reproductor principal de Amaris World
+                                   (manifest.json, script.js, #bgAudio).
+                                   Este archivo NUNCA lee ni escribe ahí.
+     - assets/piano-songs/      → ÚNICA carpeta que usa AMARIS PIANO. Este
+                                   archivo SOLO lee de aquí.
 
-   Ver GUIA-musica-personalizada.md (junto a este archivo) para el detalle
-   completo del formato, con ejemplos listos para copiar y pegar.
+   Si assets/piano-songs/music.json no existe, está vacío, o falla la
+   carga (por ejemplo al abrir el proyecto con file:// sin servidor, donde
+   fetch() puede fallar por CORS), este archivo simplemente no hace nada:
+   el juego sigue funcionando igual, con generación automática de notas y
+   sin música personalizada. Nunca produce un error que rompa el juego.
 
-   RESUMEN DE LA ESTRUCTURA (ver la guía para el detalle):
+   ESTRUCTURA ESPERADA (ver GUIA-musica-personalizada.md para el detalle):
 
-     assets/music/
+     assets/piano-songs/
      ├── music.json                  ← manifiesto: arreglo de canciones
-     ├── mi-cancion/
-     │   ├── song.mp3
-     │   ├── chart.json              ← notas sincronizadas (opcional)
-     │   ├── cover.jpg                (opcional)
-     │   ├── note1.jpg
-     │   ├── note1-hit.jpg
-     │   └── sfx/
-     │       ├── perfect.mp3
-     │       ├── great.mp3
-     │       ├── miss.mp3
-     │       └── hold.mp3
-     └── otra-cancion/
-         ├── song.mp3
-         └── chart.json
+     ├── GUIA-musica-personalizada.md
+     ├── sfx/                        ← sfx de respaldo compartidos (opcional)
+     └── mi-cancion/
+         ├── Morning_in_the_Cr....mp3   ← el nombre EXACTO va en "file"
+         ├── chart.json                 (opcional)
+         ├── cover.jpg                  (opcional)
+         └── sfx/                       (opcional, todos los archivos opcionales)
+             ├── perfect.mp3
+             ├── excellent.mp3
+             ├── great.mp3
+             ├── good.mp3
+             ├── miss.mp3
+             └── hold.mp3
 
    music.json — arreglo de objetos:
      {
-       "id": "mi-cancion",           // único, sin espacios
-       "name": "Mi Canción",         // se muestra en el selector
-       "folder": "assets/music/mi-cancion",
-       "chart": "chart.json",        // ruta relativa a "folder" — o ARREGLO inline
-       "cover": "cover.jpg",         // relativo a "folder" (opcional, no usado aún por la UI)
-       "sfx": {                     // relativo a "folder" (opcional, todos opcionales)
+       "id": "mi-cancion",                       // único, sin espacios
+       "name": "Morning in the Clouds",          // se muestra en el selector
+       "folder": "assets/piano-songs/mi-cancion",
+       "file": "Morning_in_the_Cr....mp3",       // nombre REAL del archivo,
+                                                  // respetando mayúsculas/
+                                                  // minúsculas/espacios/
+                                                  // guiones/extensión
+       "chart": "chart.json",                    // opcional: ruta relativa
+                                                  // a "folder", o ARREGLO
+                                                  // inline con el mismo
+                                                  // formato de setChart()
+       "cover": "cover.jpg",                     // opcional, relativo a "folder"
+       "sfx": {                                  // opcional, relativo a "folder"
          "perfect": "sfx/perfect.mp3",
          "great": "sfx/great.mp3",
-         "miss": "sfx/miss.mp3",
-         "hold": "sfx/hold.mp3"
+         "miss": "sfx/miss.mp3"
        }
      }
 
-   chart.json (o el arreglo inline de "chart"): MISMO formato que ya usa
-   AmarisPiano.setChart(), con "image"/"hitImage" opcionales por nota (ver
-   piano-game.js, sección "6) CICLO DE JUEGO" y el encabezado del archivo):
-     [
-       { "time": 1000, "lane": 0, "type": "tap",  "image": "note1.jpg" },
-       { "time": 2000, "lane": 1, "type": "tap",  "image": "note1.jpg", "hitImage": "note1-hit.jpg" },
-       { "time": 3000, "lane": 2, "type": "hold", "duration": 1200, "image": "note2.jpg" }
-     ]
+   Si "cover" o "sfx" no se especifican, el loader asume por convención
+   "cover.jpg" y "sfx/<tipo>.mp3" dentro de la propia carpeta de la
+   canción; si esos archivos no existen de verdad, el juego los ignora en
+   silencio (nunca truena por un archivo faltante — igual que siempre).
 
-   Las rutas de "image"/"hitImage"/"sfx.*" son relativas a la carpeta de la
-   canción ("folder"). Si una ruta YA contiene "/" (por ejemplo para
-   compartir una imagen entre varias canciones desde assets/friends/), se
-   usa tal cual, sin anteponerle la carpeta.
+   Las rutas de "image"/"hitImage" dentro de un chart son relativas a la
+   carpeta de la canción ("folder"). Si una ruta YA contiene "/" (por
+   ejemplo para compartir una imagen entre varias canciones), se usa tal
+   cual, sin anteponerle la carpeta.
    ========================================================================== */
 
 (function () {
   "use strict";
 
-  var MANIFEST_URL = "assets/music/music.json";
+  var LOG_PREFIX = "[AMARIS PIANO]";
+  // Única fuente de canciones de Amaris Piano. NO assets/music/music.json
+  // (ese pertenece al reproductor principal de Amaris World).
+  var MANIFEST_URL = "assets/piano-songs/music.json";
 
   function joinPath(base, rel) {
     if (!rel) return rel;
@@ -92,29 +97,69 @@
     });
   }
 
+  // Si la canción no especifica "sfx" en el manifiesto, se asumen por
+  // convención los nombres de siempre dentro de <folder>/sfx/. No pasa
+  // nada si alguno (o todos) no existen de verdad: piano-game.js ya los
+  // ignora en silencio al reproducirlos (punto 12 del pedido).
+  var SFX_KINDS = ["perfect", "excellent", "great", "good", "miss", "hold"];
+
   function resolveSfxPaths(sfx, folder) {
-    if (!sfx || typeof sfx !== "object") return null;
     var out = {};
     var any = false;
-    ["perfect", "excellent", "great", "good", "miss", "hold"].forEach(function (kind) {
-      if (sfx[kind]) {
-        out[kind] = joinPath(folder, sfx[kind]);
+    if (sfx && typeof sfx === "object") {
+      SFX_KINDS.forEach(function (kind) {
+        if (sfx[kind]) {
+          out[kind] = joinPath(folder, sfx[kind]);
+          any = true;
+        }
+      });
+    } else {
+      SFX_KINDS.forEach(function (kind) {
+        out[kind] = joinPath(folder, "sfx/" + kind + ".mp3");
         any = true;
-      }
-    });
+      });
+    }
     return any ? out : null;
+  }
+
+  // Comprobación best-effort (punto 9 del pedido): intenta confirmar que
+  // el archivo exista, solo para dejar un diagnóstico claro en consola.
+  // NUNCA bloquea ni impide registrar la canción — si falla (por CORS, por
+  // abrir con file://, o porque el archivo de verdad no existe), el juego
+  // sigue igual: piano-game.js ya maneja en silencio un audio.src ausente.
+  function checkFileExists(path) {
+    fetch(path, { method: "HEAD" })
+      .then(function (res) {
+        if (!res.ok) {
+          console.warn(LOG_PREFIX + " No se encontró la canción:\n" + path);
+        }
+      })
+      .catch(function () {
+        // No se pudo verificar (CORS, file://, etc.): no es un error del
+        // sistema de canciones, así que no se reporta como tal.
+      });
   }
 
   function registerSong(entry) {
     if (!window.AmarisPiano || typeof window.AmarisPiano.addSong !== "function") return;
-    if (!entry || !entry.id || !entry.name || !entry.folder) return; // entrada mal formada: se ignora, sin romper el resto del manifiesto
+    if (!entry || !entry.id || !entry.name || !entry.folder || !entry.file) {
+      console.warn(LOG_PREFIX + " Entrada inválida en music.json (faltan id/name/folder/file), se omite:", entry);
+      return;
+    }
 
     var folder = entry.folder.replace(/\/+$/, "");
+    var filePath = joinPath(folder, entry.file);
+    var coverPath = joinPath(folder, entry.cover || "cover.jpg");
+
+    console.log(LOG_PREFIX + " Registrando:\n" + entry.name);
+    console.log(LOG_PREFIX + " Archivo:\n" + filePath);
+    checkFileExists(filePath);
+
     var song = {
       id: entry.id,
       name: entry.name,
-      file: joinPath(folder, "song.mp3"),
-      cover: entry.cover ? joinPath(folder, entry.cover) : null,
+      file: filePath,
+      cover: coverPath,
       sfx: resolveSfxPaths(entry.sfx, folder)
     };
 
@@ -122,13 +167,16 @@
       // Chart ya viene inline dentro del manifiesto: se registra completo.
       song.chart = resolveChartPaths(entry.chart, folder);
       window.AmarisPiano.addSong(song);
+      console.log(LOG_PREFIX + " Canción cargada correctamente");
     } else if (typeof entry.chart === "string") {
-      // Chart en un archivo aparte (lo más cómodo para no editar JSON
-      // gigante a mano): se registra la canción YA (sin chart todavía, así
-      // que mientras carga usa el generador automático de notas, como
-      // cualquier canción sin chart) y se actualiza en cuanto llega.
+      // Chart en un archivo aparte: se registra la canción YA (sin chart
+      // todavía, así que mientras carga usa el generador automático de
+      // notas, como cualquier canción sin chart) y se actualiza en cuanto
+      // llega (punto 10-11 del pedido).
       window.AmarisPiano.addSong(song);
-      fetch(joinPath(folder, entry.chart))
+      console.log(LOG_PREFIX + " Canción cargada correctamente");
+      var chartPath = joinPath(folder, entry.chart);
+      fetch(chartPath)
         .then(function (res) {
           if (!res.ok) throw new Error("chart.json no encontrado: " + song.id);
           return res.json();
@@ -137,12 +185,13 @@
           window.AmarisPiano.setSongChart(song.id, resolveChartPaths(chart, folder));
         })
         .catch(function () {
-          /* Sin chart.json: la canción se queda con generación automática
-             de notas, el juego nunca se rompe ni se queda esperando. */
+          // Sin chart.json real: la canción se queda con generación
+          // automática de notas (punto 11: NO impide reproducir la canción).
         });
     } else {
       // Sin "chart" en absoluto: canción válida, generación automática.
       window.AmarisPiano.addSong(song);
+      console.log(LOG_PREFIX + " Canción cargada correctamente");
     }
   }
 
@@ -151,19 +200,26 @@
     // desactiva sola — nunca rompe el resto del juego.
     if (!window.AmarisPiano || typeof window.AmarisPiano.addSong !== "function") return;
 
+    console.log(LOG_PREFIX + " Cargando music.json...");
+
     fetch(MANIFEST_URL)
       .then(function (res) {
         if (!res.ok) throw new Error("music.json no encontrado");
         return res.json();
       })
       .then(function (list) {
-        if (!Array.isArray(list)) return;
+        if (!Array.isArray(list)) {
+          console.warn(LOG_PREFIX + " music.json no contiene un arreglo, se ignora.");
+          return;
+        }
+        console.log(LOG_PREFIX + " Canciones encontradas: " + list.length);
         list.forEach(registerSong);
       })
       .catch(function () {
-        /* Sin manifiesto (o falló, p. ej. al abrir con file:// sin
-           servidor): el juego sigue exactamente igual, solo con las
-           canciones ya definidas dentro de PIANO_SONGS en piano-game.js. */
+        // Sin manifiesto (o falló, p. ej. al abrir con file:// sin
+        // servidor): el juego sigue exactamente igual, con generación
+        // automática de notas y sin música personalizada.
+        console.warn(LOG_PREFIX + " No se pudo leer " + MANIFEST_URL + " (¿no existe o no hay servidor local?). El minijuego sigue funcionando sin música personalizada.");
       });
   }
 
