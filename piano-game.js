@@ -509,6 +509,8 @@
     var audio = new Audio();
     audio.preload = "auto";
     audio.loop = false;
+    audio.playsInline = true; // 🔒 iOS: sin esto, Safari puede intentar pantalla completa/afectar la reproducción
+    audio.muted = false; // 🔒 pedido explícito: nada en el proyecto debe silenciar la canción principal
     audio.volume = CONFIG.musicVolume; // 🔊 punto 15, ajustable con setVolume()
 
     // Listeners PERMANENTES de diagnóstico: se agregan UNA sola vez, aquí,
@@ -532,13 +534,30 @@
     });
     audio.addEventListener("error", function () {
       var code = audio.error ? audio.error.code : null;
+      // 🔒 BUG FIX (pedido explícito: "el banner no debe reaparecer por un
+      // error viejo de un intento anterior"): switchSongAudioTo() hace
+      // pause() → removeAttribute("src") → load() → src=url → load() — ese
+      // doble load() en algunos navegadores puede disparar un "error"
+      // ASÍNCRONO y TARDÍO que llega DESPUÉS de que un audio.play()
+      // posterior ya esté sonando de verdad (currentTime avanzando,
+      // paused=false). Como este listener es PERMANENTE (vive mientras
+      // exista el <audio>, no solo durante el intento que lo originó), sin
+      // esta comprobación ese eco tardío reactivaba el banner encima de
+      // una canción que en realidad SÍ está sonando — exactamente el
+      // síntoma reportado ("currentTime avanza pero aparece el error").
+      // Antes de mostrar nada, se revisa el estado REAL en este instante:
+      // si el audio ya está avanzando y sin pausa, el error es un eco
+      // viejo y se ignora (solo se deja constancia en consola).
+      var reallyPlaying = audio.currentTime > 0 && !audio.paused;
       console.error("[AMARIS PIANO] AUDIO ERROR", {
         src: audio.currentSrc || audio.src,
         error: audio.error,
         readyState: audio.readyState,
-        networkState: audio.networkState
+        networkState: audio.networkState,
+        ignoredAsStale: reallyPlaying
       });
-      logAmarisAudio("error event");
+      logAmarisAudio("error event" + (reallyPlaying ? " (IGNORADO: eco viejo, el audio ya está sonando)" : ""));
+      if (reallyPlaying) return; // eco tardío de un intento anterior — el audio actual está bien
       if (code === 3 || code === 4) {
         console.log(
           "[AMARIS AUDIO] El navegador encontró el archivo pero no pudo decodificarlo (" +
@@ -715,6 +734,9 @@
     checkAmarisAudioUrl(audioUrl);
 
     switchSongAudioTo(audio, audioUrl);
+    // 🔒 Reafirmar justo antes de reproducir (pedido explícito, punto 2):
+    // nada en el proyecto debe dejar esto en un estado silenciado.
+    audio.muted = false;
     audio.volume = CONFIG.musicVolume;
     logAmarisAudio("después de load()");
 
@@ -736,6 +758,18 @@
         // El evento "playing" (listener permanente) ya logueó
         // "[AMARIS PIANO] AUDIO PLAYING" y ocultó cualquier banner previo.
         state.songAudioFailed = false;
+        // Diagnóstico exacto pedido (punto 2): el objeto completo tal cual
+        // se solicitó, justo después de que play() se confirmó.
+        console.log("[AMARIS AUDIO] play() confirmado. Estado real:", {
+          src: audio.currentSrc || audio.src,
+          paused: audio.paused,
+          muted: audio.muted,
+          volume: audio.volume,
+          currentTime: audio.currentTime,
+          readyState: audio.readyState,
+          networkState: audio.networkState,
+          error: audio.error
+        });
         onSuccess();
       })
       .catch(function (err) {
@@ -1796,6 +1830,19 @@
   }
 
   function tick() {
+    // 🔒 AUTO-CORRECCIÓN DEL BANNER (pedido explícito, punto 1): en vez de
+    // confiar en un único evento para saber si hay que ocultar el error,
+    // se revisa el estado REAL del audio en cada frame mientras se juega.
+    // Criterio exacto pedido: currentTime > 0, paused === false,
+    // error === null → el audio está sonando bien de verdad, así que el
+    // banner (si quedó visible por lo que sea) se oculta YA, sin esperar
+    // a un evento "playing" que ya pasó. Barato: son 4 lecturas de
+    // propiedades, una vez por frame, solo mientras se está jugando.
+    if (state.songAudio && state.songAudio.currentTime > 0 && !state.songAudio.paused && !state.songAudio.error) {
+      if (state.songAudioFailed) state.songAudioFailed = false;
+      if (els.audioError && !els.audioError.hidden) hideAudioError();
+    }
+
     var elapsed = getElapsedMs();
 
     // Log de sincronización (punto 31), limitado a 1 vez por segundo: tick()
